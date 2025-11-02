@@ -1,34 +1,34 @@
 // config/db.js
-const sql = require('mssql');
+const mysql = require('mysql2/promise');
 
-const config = {
-  server: process.env.SQL_SERVER,
-  user: process.env.SQL_USER,
+const pool = mysql.createPool({
+  host: process.env.SQL_SERVER, // ví dụ: 'localhost'
+  user: process.env.SQL_USER,   // ví dụ: 'root'
   password: process.env.SQL_PASSWORD,
   database: process.env.SQL_DATABASE,
-  options: { encrypt: process.env.SQL_ENCRYPT === 'true', trustServerCertificate: true },
-  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 }
-};
+  port: process.env.SQL_PORT || 3306,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
 
-const poolPromise = new sql.ConnectionPool(config)
-  .connect()
-  .then(pool => {
-    console.log('✅ Kết nối SQL Server thành công!');
-    return pool;
+pool.getConnection()
+  .then(conn => {
+    console.log('✅ Kết nối MySQL thành công!');
+    conn.release();
   })
   .catch(err => {
-    console.error('❌ Lỗi kết nối SQL Server:', err);
+    console.error('❌ Lỗi kết nối MySQL:', err.message);
     process.exit(1);
   });
 
 async function testConnection() {
   try {
-    const pool = await poolPromise;
-    await pool.request().query('SELECT 1 AS ok');
-    console.log('🔌 DB ready');
-  } catch (e) {
-    console.error('DB test failed:', e);
+    const [rows] = await pool.query('SELECT 1 AS ok');
+    console.log('🔌 DB ready:', rows[0]);
+  } catch (err) {
+    console.error('DB test failed:', err);
   }
 }
 
-module.exports = { sql, poolPromise, testConnection };
+module.exports = { pool, testConnection };
