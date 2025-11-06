@@ -1,10 +1,12 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
-const { poolPromise, sql } = require('../config/db');
+const { pool } = require('../config/db'); // ⚠️ MySQL dùng pool trực tiếp
 const { createAccessToken, createRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 
+// -------------------------
 // 🧮 Hàm tính thời gian hết hạn (ví dụ "30d")
+// -------------------------
 function ms(str) {
   const m = /^(\d+)([smhd])$/.exec(str || '30d');
   if (!m) return 0;
@@ -13,40 +15,27 @@ function ms(str) {
 }
 
 // -------------------------
-// 🟢 Đăng ký tài khoản
+// 🟢 Đăng ký tài khoản (MySQL)
 // -------------------------
 router.post('/signup', async (req, res) => {
-  const { username, password, full_name, email, phone, role } = req.body;
-  if (!username || !password)
-    return res.status(400).json({ message: 'Thiếu username hoặc password' });
-
   try {
-    const pool = await poolPromise;
+    const { username, password, full_name, email, phone, role } = req.body;
+    if (!username || !password)
+      return res.status(400).json({ message: 'Thiếu username hoặc password' });
 
-    // Kiểm tra trùng username
-    const dup = await pool
-      .request()
-      .input('u', sql.VarChar, username)
-      .query('SELECT user_id FROM dbo.Users WHERE username=@u');
-    if (dup.recordset.length)
+    // Kiểm tra username trùng
+    const [dup] = await pool.query('SELECT user_id FROM Users WHERE username = ?', [username]);
+    if (dup.length > 0)
       return res.status(409).json({ message: 'Username đã tồn tại' });
 
-    // Mã hóa mật khẩu
     const hash = await bcrypt.hash(password, 10);
 
     // Thêm user mới
-    await pool
-      .request()
-      .input('username', sql.VarChar, username)
-      .input('password', sql.VarChar, hash) // 👉 chỉ lưu hash vào cột password
-      .input('full_name', sql.NVarChar, full_name || null)
-      .input('email', sql.VarChar, email || null)
-      .input('phone', sql.VarChar, phone || null)
-      .input('role', sql.VarChar, role || 'beekeeper')
-      .query(`
-        INSERT INTO dbo.Users (username, password, full_name, email, phone, role, created_at)
-        VALUES (@username, @password, @full_name, @email, @phone, @role, GETDATE())
-      `);
+    await pool.query(
+      `INSERT INTO Users (username, password, full_name, email, phone, role, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [username, hash, full_name || null, email || null, phone || null, role || 'beekeeper']
+    );
 
     res.status(201).json({ message: 'Đăng ký thành công' });
   } catch (err) {
@@ -56,44 +45,31 @@ router.post('/signup', async (req, res) => {
 });
 
 // -------------------------
-// 🟢 Đăng nhập
+// 🟢 Đăng nhập (MySQL)
 // -------------------------
 router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password)
-    return res.status(400).json({ message: 'Thiếu username/password' });
-
   try {
-    const pool = await poolPromise;
-    const rs = await pool
-      .request()
-      .input('u', sql.VarChar, username)
-      .query('SELECT TOP 1 * FROM dbo.Users WHERE username=@u');
+    const { username, password } = req.body;
+    if (!username || !password)
+      return res.status(400).json({ message: 'Thiếu username/password' });
 
-    if (!rs.recordset.length)
+    const [rows] = await pool.query('SELECT * FROM Users WHERE username = ? LIMIT 1', [username]);
+    if (rows.length === 0)
       return res.status(401).json({ message: 'Sai thông tin đăng nhập' });
 
-    const user = rs.recordset[0];
-
-    // So sánh mật khẩu
+    const user = rows[0];
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ message: 'Sai mật khẩu' });
 
-    // Tạo JWT
     const payload = { user_id: user.user_id, username: user.username, role: user.role };
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
 
-    // Lưu refresh token vào DB
-    await pool
-      .request()
-      .input('uid', sql.Int, user.user_id)
-      .input('token', sql.VarChar, refreshToken)
-      .input('exp', sql.DateTime2, new Date(Date.now() + ms(process.env.JWT_REFRESH_EXPIRES || '30d')))
-      .query(`
-        INSERT INTO dbo.REFRESH_TOKEN (user_id, token, expires_at)
-        VALUES (@uid, @token, @exp)
-      `);
+    const expiresAt = new Date(Date.now() + ms(process.env.JWT_REFRESH_EXPIRES || '30d'));
+    await pool.query(
+      `INSERT INTO REFRESH_TOKEN (user_id, token, expires_at) VALUES (?, ?, ?)`,
+      [user.user_id, refreshToken, expiresAt]
+    );
 
     res.json({
       message: 'Đăng nhập thành công',
@@ -114,20 +90,18 @@ router.post('/login', async (req, res) => {
 });
 
 // -------------------------
-// 🟢 Refresh token
+// 🟢 Refresh token (MySQL)
 // -------------------------
 router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) return res.status(400).json({ message: 'Thiếu refreshToken' });
-
   try {
+    const { refreshToken } = req.body;
+    if (!refreshToken)
+      return res.status(400).json({ message: 'Thiếu refreshToken' });
+
     const decoded = verifyRefreshToken(refreshToken);
-    const pool = await poolPromise;
-    const rs = await pool
-      .request()
-      .input('t', sql.VarChar, refreshToken)
-      .query('SELECT revoked FROM dbo.REFRESH_TOKEN WHERE token=@t');
-    if (!rs.recordset.length || rs.recordset[0].revoked)
+    const [rows] = await pool.query('SELECT revoked FROM REFRESH_TOKEN WHERE token = ?', [refreshToken]);
+
+    if (rows.length === 0 || rows[0].revoked)
       return res.status(401).json({ message: 'Refresh token không hợp lệ' });
 
     const newAccess = createAccessToken({
@@ -135,6 +109,7 @@ router.post('/refresh', async (req, res) => {
       username: decoded.username,
       role: decoded.role,
     });
+
     res.json({ accessToken: newAccess });
   } catch (err) {
     console.error('Refresh token error:', err);
@@ -143,20 +118,19 @@ router.post('/refresh', async (req, res) => {
 });
 
 // -------------------------
-// 🟢 Logout
+// 🟢 Logout (MySQL)
 // -------------------------
 router.post('/logout', async (req, res) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) return res.status(400).json({ message: 'Thiếu refreshToken' });
-
   try {
-    const pool = await poolPromise;
-    await pool.request().input('t', sql.VarChar, refreshToken)
-      .query('UPDATE dbo.REFRESH_TOKEN SET revoked=1 WHERE token=@t');
+    const { refreshToken } = req.body;
+    if (!refreshToken)
+      return res.status(400).json({ message: 'Thiếu refreshToken' });
+
+    await pool.query('UPDATE REFRESH_TOKEN SET revoked=1 WHERE token=?', [refreshToken]);
     res.json({ message: 'Đã đăng xuất' });
   } catch (err) {
     console.error('Logout error:', err);
-    res.status(500).json({ message: 'Lỗi server' });
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
 

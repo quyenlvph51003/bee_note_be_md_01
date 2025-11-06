@@ -1,86 +1,37 @@
 #!/usr/bin/env node
+const app = require('../app');
+const http = require('http');
 
-/**
- * Module dependencies.
- */
-
-var app = require('../app');
-var debug = require('debug')('bee-note:server');
-var http = require('http');
-
-/**
- * Get port from environment and store in Express.
- */
-
-var port = normalizePort(process.env.PORT || '3000');
+const port = normalizePort(process.env.PORT || '3000');
 app.set('port', port);
 
-/**
- * Create HTTP server.
- */
+const server = http.createServer(app);
 
-var server = http.createServer(app);
+// Bắt buộc: bind 0.0.0.0 và KHÔNG tự nhảy cổng
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Server listening on 0.0.0.0:${port}`);
+});
 
-/**
- * Listen on provided port, on all network interfaces.
- */
-
-server.listen(port);
 server.on('error', onError);
 server.on('listening', onListening);
 
-/**
- * Normalize a port into a number, string, or false.
- */
-
 function normalizePort(val) {
-  var port = parseInt(val, 10);
-
-  if (isNaN(port)) {
-    // named pipe
-    return val;
-  }
-
-  if (port >= 0) {
-    // port number
-    return port;
-  }
-
+  const p = parseInt(val, 10);
+  if (isNaN(p)) return val;
+  if (p >= 0) return p;
   return false;
 }
-
-/**
- * Event listener for HTTP server "error" event.
- */
-
 function onError(error) {
   if (error.syscall !== 'listen') throw error;
-  var bind = typeof port === 'string' ? 'Pipe ' + port : 'Port ' + port;
-
+  const bind = typeof port === 'string' ? 'Pipe ' + port : 'Port ' + port;
   switch (error.code) {
-    case 'EACCES':
-      console.error(bind + ' requires elevated privileges');
-      process.exit(1);
-      break;
-    case 'EADDRINUSE':
-      console.warn(bind + ' is already in use, trying next port...');
-      port++; // tăng 1 cổng
-      server.listen(port);
-      break;
-    default:
-      throw error;
+    case 'EACCES': console.error(bind + ' requires elevated privileges'); process.exit(1);
+    case 'EADDRINUSE': console.error(bind + ' is already in use'); process.exit(1); // ❗ dừng, không port++
+    default: throw error;
   }
 }
-
-
-/**
- * Event listener for HTTP server "listening" event.
- */
-
 function onListening() {
-  var addr = server.address();
-  var bind = typeof addr === 'string'
-    ? 'pipe ' + addr
-    : 'port ' + addr.port;
-  debug('Listening on ' + bind);
+  const addr = server.address();
+  const bind = typeof addr === 'string' ? 'pipe ' + addr : 'port ' + addr.port;
+  console.log('Listening on ' + bind);
 }
