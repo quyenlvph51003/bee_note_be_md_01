@@ -7,7 +7,9 @@ const cors = require('cors');
 const createError = require('http-errors');
 
 const { testConnection } = require('./config/db');
-testConnection();
+// Gọi sau tick, không chặn boot & không làm crash nếu DB lỗi
+setTimeout(() => testConnection(), 0);
+
 
 const authRouter = require('./routes/auth');
 const hivesRouter = require('./routes/hives');
