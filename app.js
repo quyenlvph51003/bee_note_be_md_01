@@ -13,8 +13,8 @@ const authRouter = require('./routes/auth');
 const hivesRouter = require('./routes/hives');
 
 const app = express();
+app.set('trust proxy', 1); // quan trọng khi chạy sau proxy (Railway)
 
-// Middleware cơ bản
 app.use(logger('dev'));
 app.use(cors());
 app.use(express.json());
@@ -22,34 +22,25 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Health & welcome
+app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/', (_req, res) => res.send('Welcome to Bee Note API!'));
+
 // API routes
 app.use('/api/auth', authRouter);
 app.use('/api/hives', hivesRouter);
 
-// Health check
-app.get('/health', (_req, res) => res.json({ ok: true }));
-
-// Welcome route
-app.get('/', (_req, res) => res.send('Welcome to Bee Note API!'));
-
-// 404 handler
+// 404
 app.use((req, res, next) => next(createError(404)));
 
-// Error handler (⚠️ phải có 4 tham số)
+// Error handler
 app.use((err, req, res, next) => {
   const wantsJson = req.originalUrl.startsWith('/api/');
   if (wantsJson) {
-    return res
-      .status(err.status || 500)
+    return res.status(err.status || 500)
       .json({ message: err.message || 'Server error' });
   }
   res.status(err.status || 500).send('Server Error');
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-});
-
-module.exports = app;
+module.exports = app;   // ❗ chỉ export app, KHÔNG listen ở đây
