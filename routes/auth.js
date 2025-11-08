@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const router = express.Router();
 const { pool } = require('../config/db');
 const { createAccessToken, createRefreshToken, verifyRefreshToken } = require('../utils/jwt');
+const auth = require('../middleware/auth');
 
 // -------------------------
 // 🧮 Hàm tính thời gian hết hạn (ví dụ "30d")
@@ -15,39 +16,34 @@ function ms(str) {
 }
 
 // -------------------------
-// ✅ Đăng ký tài khoản
+// ✅ Đăng ký tài khoản (chỉ role = KEEPER)
 // -------------------------
 router.post('/signup', async (req, res) => {
   try {
-    const { username, password, full_name, email, phone, role } = req.body;
+    const { username, password, full_name, email, phone } = req.body;
     if (!username || !password)
       return res.status(400).json({ message: 'Thiếu username hoặc password' });
 
+    // Kiểm tra trùng username hoặc email
     const [dup] = await pool.query(
-      'SELECT user_id FROM Users WHERE username = ?',
-      [username]
+      'SELECT user_id FROM Users WHERE username = ? OR email = ? LIMIT 1',
+      [username, email]
     );
     if (dup.length > 0)
-      return res.status(409).json({ message: 'Username đã tồn tại' });
+      return res.status(409).json({ message: 'Username hoặc email đã tồn tại' });
 
     const hash = await bcrypt.hash(password, 10);
 
+    // ✅ Mặc định role là KEEPER
     await pool.query(
       `
       INSERT INTO Users (username, password, full_name, email, phone, role, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, NOW())
+      VALUES (?, ?, ?, ?, ?, 'KEEPER', NOW())
       `,
-      [
-        username,
-        hash,
-        full_name || null,
-        email || null,
-        phone || null,
-        role || 'KEEPER'
-      ]
+      [username, hash, full_name || null, email || null, phone || null]
     );
 
-    res.status(201).json({ message: 'Đăng ký thành công' });
+    res.status(201).json({ message: 'Đăng ký thành công (vai trò: KEEPER)' });
   } catch (err) {
     console.error('Signup error:', err);
     res.status(500).json({ message: 'Lỗi server', error: err.message });
@@ -64,7 +60,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Thiếu username/password' });
 
     const [rows] = await pool.query(
-      'SELECT * FROM Users WHERE username = ? LIMIT 1',
+      'SELECT * FROM Users WHERE username = ? AND is_active = 1 LIMIT 1',
       [username]
     );
 
@@ -72,7 +68,6 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Sai thông tin đăng nhập' });
 
     const user = rows[0];
-
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ message: 'Sai mật khẩu' });
 
@@ -85,12 +80,9 @@ router.post('/login', async (req, res) => {
     const accessToken = createAccessToken(payload);
     const refreshToken = createRefreshToken(payload);
 
-    // ✅ Lưu refresh token vào bảng Refresh_Tokens (không có revoked / expires_at)
+    // ✅ Lưu refresh token
     await pool.query(
-      `
-      INSERT INTO Refresh_Tokens (user_id, token)
-      VALUES (?, ?)
-      `,
+      `INSERT INTO Refresh_Tokens (user_id, token) VALUES (?, ?)`,
       [user.user_id, refreshToken]
     );
 
@@ -113,7 +105,7 @@ router.post('/login', async (req, res) => {
 });
 
 // -------------------------
-// ✅ Refresh token
+// 🔄 Refresh token
 // -------------------------
 router.post('/refresh', async (req, res) => {
   try {
@@ -123,7 +115,6 @@ router.post('/refresh', async (req, res) => {
 
     const decoded = verifyRefreshToken(refreshToken);
 
-    // ✅ vì bảng không có revoked → chỉ cần kiểm tra tồn tại
     const [rows] = await pool.query(
       'SELECT token_id FROM Refresh_Tokens WHERE token = ? LIMIT 1',
       [refreshToken]
@@ -146,7 +137,7 @@ router.post('/refresh', async (req, res) => {
 });
 
 // -------------------------
-// ✅ Logout
+// 🚪 Logout
 // -------------------------
 router.post('/logout', async (req, res) => {
   try {
@@ -154,15 +145,32 @@ router.post('/logout', async (req, res) => {
     if (!refreshToken)
       return res.status(400).json({ message: 'Thiếu refreshToken' });
 
-    // ✅ vì không có revoked → ta xóa luôn token
-    await pool.query(
-      'DELETE FROM Refresh_Tokens WHERE token = ?',
-      [refreshToken]
-    );
-
+    await pool.query('DELETE FROM Refresh_Tokens WHERE token = ?', [refreshToken]);
     res.json({ message: 'Đã đăng xuất' });
   } catch (err) {
     console.error('Logout error:', err);
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
+// -------------------------
+// 🔒 ADMIN: Cập nhật role người dùng
+// -------------------------
+router.put('/set-role/:id', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN')
+      return res.status(403).json({ message: 'Bạn không có quyền thực hiện thao tác này' });
+
+    const { id } = req.params;
+    const { role } = req.body;
+
+    if (!['ADMIN', 'MANAGER', 'KEEPER', 'VIEWER'].includes(role))
+      return res.status(400).json({ message: 'Role không hợp lệ' });
+
+    await pool.query('UPDATE Users SET role = ? WHERE user_id = ?', [role, id]);
+    res.json({ message: `Cập nhật quyền thành công: ${role}` });
+  } catch (err) {
+    console.error('Set role error:', err);
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });

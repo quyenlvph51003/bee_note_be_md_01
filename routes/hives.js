@@ -1,20 +1,45 @@
-// routes/hives.js  ✅ MySQL version
+// routes/hives.js ✅ FULL MySQL Version (BeeNote)
 const express = require("express");
 const router = express.Router();
 const { pool } = require("../config/db");
 const auth = require("../middleware/auth");
+const authorize = require("../middleware/authorize");
 
 /* ===========================================================
    🐝 HIVE ROUTES (MySQL version)
    Tables: Hives
    =========================================================== */
 
+// 📊 Thống kê tổ khỏe / yếu (ADMIN + KEEPER)
+router.get("/health-stats", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        CASE 
+          WHEN status IN ('ACTIVE', 'SPLIT') THEN 'KHOE'
+          ELSE 'YEU'
+        END AS health_status,
+        COUNT(*) AS total
+      FROM Hives
+      WHERE is_deleted = 0
+      GROUP BY health_status
+    `);
+
+    if (rows.length === 0)
+      return res.status(404).json({ message: "Không tìm thấy tổ ong" });
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error("❌ Lỗi thống kê sức khỏe tổ ong:", err);
+    res.status(500).json({ message: "Lỗi khi thống kê tổ ong" });
+  }
+});
+
 /**
  * GET /api/hives
- * Lấy danh sách tổ ong (có filter, phân trang)
- * query: ?status=ACTIVE&search=A&page=1&limit=10
+ * Lấy danh sách tổ ong (ADMIN + KEEPER)
  */
-router.get("/", auth, async (req, res) => {
+router.get("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
   try {
     const { status, search, page = 1, limit = 10 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
@@ -63,9 +88,9 @@ router.get("/", auth, async (req, res) => {
 
 /**
  * GET /api/hives/:id
- * Lấy chi tiết 1 tổ ong theo ID
+ * Lấy chi tiết 1 tổ ong theo ID (ADMIN + KEEPER)
  */
-router.get("/:id", auth, async (req, res) => {
+router.get("/:id", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
   try {
     const { id } = req.params;
     const [rows] = await pool.query(
@@ -85,10 +110,9 @@ router.get("/:id", auth, async (req, res) => {
 
 /**
  * POST /api/hives
- * Thêm mới tổ ong
- * body: { hive_name, creation_date, hive_type, status, queen_count, queen_status, location, notes }
+ * Thêm mới tổ ong (ADMIN + KEEPER)
  */
-router.post("/", auth, async (req, res) => {
+router.post("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
   try {
     const {
       hive_name,
@@ -124,9 +148,9 @@ router.post("/", auth, async (req, res) => {
 
 /**
  * PUT /api/hives/:id
- * Cập nhật thông tin tổ ong
+ * Cập nhật thông tin tổ ong (CHỈ ADMIN)
  */
-router.put("/:id", auth, async (req, res) => {
+router.put("/:id", auth, authorize("ADMIN"), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -163,9 +187,9 @@ router.put("/:id", auth, async (req, res) => {
 
 /**
  * DELETE /api/hives/:id
- * Xóa mềm tổ ong (is_deleted = 1)
+ * Xóa mềm tổ ong (CHỈ ADMIN)
  */
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", auth, authorize("ADMIN"), async (req, res) => {
   try {
     const { id } = req.params;
 
