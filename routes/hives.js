@@ -17,27 +17,30 @@ const authorize = require("../middleware/authorize");
 router.get("/health-stats", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT 
-        CASE 
-          WHEN status IN ('ACTIVE', 'SPLIT') THEN 'KHOE'
-          ELSE 'YEU'
-        END AS health_status,
-        COUNT(*) AS total
+      SELECT
+        SUM(CASE WHEN status = 'KHOE'         THEN 1 ELSE 0 END) AS KHOE,
+        SUM(CASE WHEN status = 'YEU'          THEN 1 ELSE 0 END) AS YEU,
+        SUM(CASE WHEN status = 'CAN_KIEM_TRA' THEN 1 ELSE 0 END) AS CAN_KIEM_TRA,
+        SUM(CASE WHEN status = 'CANH_BAO'     THEN 1 ELSE 0 END) AS CANH_BAO
       FROM Hives
       WHERE is_deleted = 0
-      GROUP BY health_status
     `);
 
-    // ✅ Luôn trả đủ 2 nhóm dù bảng rỗng
-    const stats = { KHOE: 0, YEU: 0 };
-    for (const r of rows) stats[r.health_status] = r.total;
+    const r = rows[0] || {};
+    const stats = {
+      KHOE: Number(r.KHOE || 0),
+      YEU: Number(r.YEU || 0),
+      CAN_KIEM_TRA: Number(r.CAN_KIEM_TRA || 0),
+      CANH_BAO: Number(r.CANH_BAO || 0),
+    };
 
     res.json({ success: true, data: stats });
   } catch (err) {
     console.error("❌ Lỗi thống kê sức khỏe tổ ong:", err);
-    res.status(500).json({ message: "Lỗi khi thống kê tổ ong" });
+    res.status(500).json({ success: false, message: "Lỗi khi thống kê tổ ong" });
   }
 });
+
 
 /**
  * 🐝 GET /api/hives
@@ -64,6 +67,7 @@ router.get("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
 
     const sqlData = `
       SELECT hive_id, hive_name, creation_date, hive_type, status,
+             frame_count, qr_code,
              queen_count, queen_status, location, notes,
              created_at, updated_at
       FROM Hives
@@ -123,6 +127,8 @@ router.post("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
       creation_date,
       hive_type,
       status,
+      frame_count = 0,
+      qr_code = null,
       queen_count = 1,
       queen_status,
       location,
@@ -134,10 +140,11 @@ router.post("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
 
     const [result] = await pool.query(
       `
-      INSERT INTO Hives (hive_name, creation_date, hive_type, status, queen_count, queen_status, location, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO Hives 
+      (hive_name, creation_date, hive_type, status, frame_count, qr_code, queen_count, queen_status, location, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [hive_name, creation_date, hive_type, status, queen_count, queen_status, location, notes]
+      [hive_name, creation_date, hive_type, status, frame_count, qr_code, queen_count, queen_status, location, notes]
     );
 
     res.status(201).json({
@@ -162,6 +169,8 @@ router.put("/:id", auth, authorize("ADMIN"), async (req, res) => {
       creation_date,
       hive_type,
       status,
+      frame_count,
+      qr_code,
       queen_count,
       queen_status,
       location,
@@ -175,11 +184,13 @@ router.put("/:id", auth, authorize("ADMIN"), async (req, res) => {
     await pool.query(
       `
       UPDATE Hives
-      SET hive_name=?, creation_date=?, hive_type=?, status=?, queen_count=?, 
-          queen_status=?, location=?, notes=?, updated_at = NOW()
+      SET hive_name=?, creation_date=?, hive_type=?, status=?, 
+          frame_count=?, qr_code=?, 
+          queen_count=?, queen_status=?, location=?, notes=?, 
+          updated_at = NOW()
       WHERE hive_id=? AND is_deleted=0
       `,
-      [hive_name, creation_date, hive_type, status, queen_count, queen_status, location, notes, id]
+      [hive_name, creation_date, hive_type, status, frame_count, qr_code, queen_count, queen_status, location, notes, id]
     );
 
     res.json({ message: "Cập nhật tổ ong thành công" });
