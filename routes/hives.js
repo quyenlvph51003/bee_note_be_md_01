@@ -17,10 +17,10 @@ router.get("/health-stats", auth, authorize("ADMIN", "KEEPER"), async (req, res)
   try {
     const [rows] = await pool.query(`
       SELECT
-        SUM(CASE WHEN status = 'KHOE' THEN 1 ELSE 0 END) AS KHOE,
-        SUM(CASE WHEN status = 'YEU' THEN 1 ELSE 0 END) AS YEU,
-        SUM(CASE WHEN status = 'CAN_KIEM_TRA' THEN 1 ELSE 0 END) AS CAN_KIEM_TRA,
-        SUM(CASE WHEN status = 'CANH_BAO' THEN 1 ELSE 0 END) AS CANH_BAO
+        SUM(CASE WHEN status = 'HEALTHY' THEN 1 ELSE 0 END) AS HEALTHY,
+        SUM(CASE WHEN status = 'WEAK' THEN 1 ELSE 0 END) AS WEAK,
+        SUM(CASE WHEN status = 'NEED_CHECK' THEN 1 ELSE 0 END) AS NEED_CHECK,
+        SUM(CASE WHEN status = 'ALERT' THEN 1 ELSE 0 END) AS ALERT
       FROM Hives
       WHERE is_deleted = 0
     `);
@@ -31,6 +31,7 @@ router.get("/health-stats", auth, authorize("ADMIN", "KEEPER"), async (req, res)
     res.status(500).json({ success: false, message: "Lỗi khi thống kê tổ ong" });
   }
 });
+
 
 /**
  * 🐝 GET /api/hives
