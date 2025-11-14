@@ -13,9 +13,15 @@ setTimeout(() => testConnection(), 0);
 
 const authRouter = require('./routes/auth');
 const hivesRouter = require('./routes/hives');
+
+const queenRouter = require('./routes/queen');
+const frameRouter = require('./routes/frame');
+const honeyRoutes = require("./routes/honey");
+
 const statsRouter = require('./routes/stats');
 const farmsRouter = require('./routes/farms');
 const usersRouter = require('./routes/users');
+
 
 const app = express();
 app.set('trust proxy', 1); // quan trọng khi chạy sau proxy (Railway)
@@ -34,9 +40,15 @@ app.get('/', (_req, res) => res.send('Welcome to Bee Note API!'));
 // API routes
 app.use('/api/auth', authRouter);
 app.use('/api/hives', hivesRouter);
+
+app.use('/api/queen', queenRouter);
+app.use('/api/frame', frameRouter);
+app.use("/api/honey", honeyRoutes);
+
 app.use('/api/stats', statsRouter);
 app.use('/api/farms', farmsRouter);
 app.use('/api/users', usersRouter);
+
 
 // 404
 app.use((req, res, next) => next(createError(404)));
