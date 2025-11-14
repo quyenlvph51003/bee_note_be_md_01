@@ -4,6 +4,7 @@ const { pool } = require("../config/db");
 const auth = require("../middleware/auth"); // ✅ import middleware xác thực
 
 //  1️ Thêm cầu ong mới
+//sưa 
 router.post("/", auth, async (req, res) => {
   try {
     const { hive_id, frame_type, honey_yield, note } = req.body;
