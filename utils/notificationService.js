@@ -24,7 +24,7 @@ function buildMessage(hive, kind) {
       case "WEAK":
         return {
           title: `Tổ ${hive.hive_name} đang yếu`,
-          message: `Tổ ${hive.hive_name} (id:${hive.hive_id}) đang yếu, cần kiểm tra.`
+          message: `Tổ ${hive.hive_name} đang yếu, cần kiểm tra.`
         };
       case "NEED_CHECK":
         return {
@@ -34,7 +34,7 @@ function buildMessage(hive, kind) {
       case "ALERT":
         return {
           title: `⚠️ Cảnh báo: Tổ ${hive.hive_name}`,
-          message: `Tổ ${hive.hive_name} đang ở trạng thái ALERT. Kiểm tra ngay.`
+          message: `Tổ ${hive.hive_name} đang ALERT. Kiểm tra ngay.`
         };
       default:
         return {
@@ -54,12 +54,12 @@ function buildMessage(hive, kind) {
       case "VIRGIN":
         return {
           title: `Chúa tơ – ${hive.hive_name}`,
-          message: `Tổ ${hive.hive_name} có chúa tơ, cần theo dõi quá trình giao phối.`
+          message: `Tổ ${hive.hive_name} có chúa tơ, cần theo dõi.`
         };
       case "SUPERSEDURE":
         return {
           title: `Tổ ${hive.hive_name} đang thay chúa`,
-          message: `Tổ ${hive.hive_name} đang diễn ra supersedure.`
+          message: `Tổ ${hive.hive_name} đang supersedure.`
         };
       default:
         return {
@@ -103,7 +103,6 @@ async function createNotification({ hiveId, farmId, userId, title, message, type
   }
 }
 
-// update last notify
 async function updateHiveLastNotify(hiveId) {
   await pool.execute(`UPDATE Hives SET last_notify_at = NOW() WHERE hive_id = ?`, [hiveId]);
 }
@@ -121,8 +120,16 @@ async function checkHiveAndNotify(hive) {
   const days = daysSince(hive.last_notify_at);
   const userId = await getFarmOwnerId(hive.farm_id);
 
-  // 1) Nếu mất chúa → Gửi ngay
+  // ================================
+  // 🔥 SỬA QUAN TRỌNG:
+  // ABSENT chỉ gửi 1 lần duy nhất
+  // ================================
   if (hive.queen_status === "ABSENT") {
+
+    if (days < 1) {
+      return; // đã gửi gần đây → KHÔNG gửi lại
+    }
+
     const { title, message } = buildMessage(hive, "QUEEN_STATUS");
 
     await createNotification({
@@ -138,7 +145,7 @@ async function checkHiveAndNotify(hive) {
     return;
   }
 
-  // 2) Gửi khi đến hạn cycle
+  // cycle gửi lại theo ngày
   if (days >= Math.min(hiveCycle, queenCycle)) {
     const m1 = buildMessage(hive, "HIVE_STATUS");
     const m2 = buildMessage(hive, "QUEEN_STATUS");
@@ -159,17 +166,13 @@ async function checkHiveAndNotify(hive) {
   }
 }
 
-// lấy owner → dùng manager_id
+// lấy owner
 async function getFarmOwnerId(farmId) {
   try {
     const [rows] = await pool.execute(
-      `SELECT manager_id AS user_id
-         FROM Farms
-         WHERE farm_id = ?
-         LIMIT 1`,
+      `SELECT manager_id AS user_id FROM Farms WHERE farm_id = ? LIMIT 1`,
       [farmId]
     );
-
     return rows.length ? rows[0].user_id : null;
   } catch (err) {
     console.warn("getFarmOwnerId error", err);
