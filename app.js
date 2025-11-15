@@ -6,20 +6,25 @@ const logger = require('morgan');
 const cors = require('cors');
 const createError = require('http-errors');
 
+// Kết nối DB
 const { testConnection } = require('./config/db');
-// Gọi sau tick, không chặn boot & không làm crash nếu DB lỗi
+// Kiểm tra kết nối DB (không chặn tiến trình chính)
 setTimeout(() => testConnection(), 0);
 
-
+// Import routers
 const authRouter = require('./routes/auth');
 const hivesRouter = require('./routes/hives');
 const statsRouter = require('./routes/stats');
 const farmsRouter = require('./routes/farms');
 const usersRouter = require('./routes/users');
+const notificationsRouter = require('./routes/notifications');
 
 const app = express();
-app.set('trust proxy', 1); // quan trọng khi chạy sau proxy (Railway)
 
+// Tin cậy proxy (quan trọng khi deploy Railway / VPS / Nginx / Cloudflare)
+app.set('trust proxy', 1);
+
+// Middleware
 app.use(logger('dev'));
 app.use(cors());
 app.use(express.json());
@@ -27,7 +32,7 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Health & welcome
+// Healthcheck
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.get('/', (_req, res) => res.send('Welcome to Bee Note API!'));
 
@@ -37,18 +42,24 @@ app.use('/api/hives', hivesRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/farms', farmsRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/notifications', notificationsRouter);
 
-// 404
-app.use((req, res, next) => next(createError(404)));
+// 404 handler
+app.use((req, res, next) => {
+  next(createError(404));
+});
 
-// Error handler
+// Global error handler
 app.use((err, req, res, next) => {
   const wantsJson = req.originalUrl.startsWith('/api/');
+
   if (wantsJson) {
-    return res.status(err.status || 500)
-      .json({ message: err.message || 'Server error' });
+    return res
+      .status(err.status || 500)
+      .json({ message: err.message || 'Server Error' });
   }
+
   res.status(err.status || 500).send('Server Error');
 });
 
-module.exports = app;   // ❗ chỉ export app, KHÔNG listen ở đây
+module.exports = app; // KHÔNG listen ở đây
