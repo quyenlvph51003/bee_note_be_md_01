@@ -150,4 +150,56 @@ router.get("/unread/count", auth, async (req, res) => {
   }
 });
 
+// ======================================
+// 6. DELETE ONE NOTIFICATION
+// ======================================
+router.delete("/:id", auth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const userId = req.user.user_id;
+
+    const [result] = await pool.execute(
+      `DELETE FROM Notifications 
+       WHERE notification_id = ? AND user_id = ?`,
+      [id, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy thông báo hoặc không có quyền xoá"
+      });
+    }
+
+    res.json({ success: true, message: "Đã xoá thông báo" });
+  } catch (err) {
+    console.error("NOTI DELETE ERROR:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// ======================================
+// 7. DELETE ALL READ NOTIFICATIONS
+// ======================================
+router.delete("/clear/read", auth, async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+
+    const [result] = await pool.execute(
+      `DELETE FROM Notifications
+       WHERE user_id = ? AND is_read = 1`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      deleted: result.affectedRows,
+      message: "Đã xoá tất cả thông báo đã đọc"
+    });
+  } catch (err) {
+    console.error("NOTI DELETE ALL READ ERROR:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
 module.exports = router;
