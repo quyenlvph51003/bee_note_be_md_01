@@ -4,13 +4,19 @@ const router = express.Router();
 const { pool } = require('../config/db');
 const { verifyAccessToken } = require('../utils/jwt');
 
+// ====================
+// CẤU HÌNH TÊN BẢNG (CHỈ SỬA 1 CHỖ)
+// ====================
+const TABLE_NAME = 'diarys'; // THAY ĐỔI TÊN BẢNG Ở ĐÂY
+
 // -------------------------
 //// Middleware: Kiểm tra token
 // -------------------------
 const auth = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer '))
+  if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ message: 'Thiếu token' });
+  }
 
   const token = authHeader.split(' ')[1];
   try {
@@ -29,12 +35,12 @@ router.post('/add', auth, async (req, res) => {
     const {
       hive_id,
       check_date,
-      status,           // tình trạng tổ ong: healthy, weak, queenless, ...
-      weather,          // thời tiết
+      status = 'healthy',
+      weather,
       temperature,
       humidity,
-      actions,          // hành động: "cho ăn", "thay cầu", "xử lý ve", ...
-      notes             // ghi chú thêm
+      actions,
+      notes
     } = req.body;
 
     if (!hive_id) {
@@ -48,18 +54,18 @@ router.post('/add', auth, async (req, res) => {
     }
 
     const [result] = await pool.query(
-      `INSERT INTO Hive_Diary 
+      `INSERT INTO ${TABLE_NAME} 
          (hive_id, check_date, status, weather, temperature, humidity, actions, notes, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         hive_id,
         check_date || new Date().toISOString().slice(0, 10),
-        status || 'healthy',
-        weather || null,
-        temperature || null,
-        humidity || null,
-        actions || null,
-        notes || null
+        status,
+        weather ?? null,
+        temperature ?? null,
+        humidity ?? null,
+        actions ?? null,
+        notes ?? null
       ]
     );
 
@@ -74,7 +80,7 @@ router.post('/add', auth, async (req, res) => {
 });
 
 // -------------------------
-//// 2. Lấy danh sách nhật ký (có lọc)
+//// 2. Lấy danh sách nhật ký
 // -------------------------
 router.get('/list', auth, async (req, res) => {
   try {
@@ -103,14 +109,14 @@ router.get('/list', auth, async (req, res) => {
         d.*,
         h.hive_name,
         h.location
-      FROM Hive_Diary d
+      FROM ${TABLE_NAME} d
       LEFT JOIN Hives h ON d.hive_id = h.hive_id
       ${where}
       ORDER BY d.check_date DESC, d.created_at DESC
       LIMIT ? OFFSET ?
     `;
 
-    const countQuery = `SELECT COUNT(*) as total FROM Hive_Diary d ${where}`;
+    const countQuery = `SELECT COUNT(*) as total FROM ${TABLE_NAME} d ${where}`;
 
     const [rows] = await pool.query(query, [...params, Number(limit), offset]);
     const [countResult] = await pool.query(countQuery, params);
@@ -153,7 +159,6 @@ router.put('/update/:id', auth, async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
 
-    // Danh sách trường hợp lệ
     const allowedFields = [
       'check_date', 'status', 'weather', 'temperature',
       'humidity', 'actions', 'notes'
@@ -176,7 +181,7 @@ router.put('/update/:id', auth, async (req, res) => {
     values.push(id);
 
     const [result] = await pool.query(
-      `UPDATE Hive_Diary SET ${setClause.join(', ')}, updated_at = NOW() WHERE diary_id = ?`,
+      `UPDATE ${TABLE_NAME} SET ${setClause.join(', ')}, updated_at = NOW() WHERE diary_id = ?`,
       values
     );
 
@@ -198,7 +203,7 @@ router.delete('/delete/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const [result] = await pool.query('DELETE FROM Hive_Diary WHERE diary_id = ?', [id]);
+    const [result] = await pool.query(`DELETE FROM ${TABLE_NAME} WHERE diary_id = ?`, [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Không tìm thấy nhật ký để xóa' });
