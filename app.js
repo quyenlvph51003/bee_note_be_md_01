@@ -19,6 +19,10 @@ const queenRouter = require('./routes/queen');
 const frameRouter = require('./routes/frame');
 const honeyRoutes = require("./routes/honey");
 
+
+const diaryRouter = require('./routes/diary');
+const diseaseRouter = require('./routes/disease');
+
 const statsRouter = require('./routes/stats');
 const farmsRouter = require('./routes/farms');
 const usersRouter = require('./routes/users');
@@ -49,6 +53,9 @@ app.use('/api/hives', hivesRouter);
 app.use('/api/queen', queenRouter);
 app.use('/api/frame', frameRouter);
 app.use("/api/honey", honeyRoutes);
+
+app.use('/api/diary', diaryRouter);
+app.use('/api/disease', diseaseRouter);
 
 app.use('/api/stats', statsRouter);
 app.use('/api/farms', farmsRouter);
