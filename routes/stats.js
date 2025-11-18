@@ -146,144 +146,144 @@ router.get('/top-farms', auth, async (req, res) => {
   }
 });
 
-// /**
-//  * Thống kê chi tiết TRONG 1 TRẠI ONG
-//  * GET /api/stats/farms/:farmId
-//  *
-//  * Trả về:
-//  *  - Thông tin trại
-//  *  - Tổng số tổ ong
-//  *  - Tổng lượng mật (kg) trong trại
-//  *  - Lượng mật theo ngày (30 ngày gần nhất)
-//  *  - Số tổ theo từng trạng thái (status)
-//  *  - Danh sách từng tổ: hive_id, hive_name, status, tổng mật, ngày thu gần nhất
-//  *
-//  * ADMIN: xem mọi trại
-//  * KEEPER: chỉ trại có manager_id = user_id
-//  */
-// router.get(
-//   '/farms/:farmId',
-//   auth,
-//   authorize('ADMIN', 'KEEPER'),
-//   async (req, res) => {
-//     const ownerId = req.user.user_id;
-//     const role = String(req.user.role).toUpperCase();
-//     const isAdmin = role === 'ADMIN';
-//     const { farmId } = req.params;
+/**
+ * Thống kê chi tiết TRONG 1 TRẠI ONG
+ * GET /api/stats/farms/:farmId
+ *
+ * Trả về:
+ *  - Thông tin trại
+ *  - Tổng số tổ ong
+ *  - Tổng lượng mật (kg) trong trại
+ *  - Lượng mật theo ngày (30 ngày gần nhất)
+ *  - Số tổ theo từng trạng thái (status)
+ *  - Danh sách từng tổ: hive_id, hive_name, status, tổng mật, ngày thu gần nhất
+ *
+ * ADMIN: xem mọi trại
+ * KEEPER: chỉ trại có manager_id = user_id
+ */
+router.get(
+  '/farms/:farmId',
+  auth,
+  authorize('ADMIN', 'KEEPER'),
+  async (req, res) => {
+    const ownerId = req.user.user_id;
+    const role = String(req.user.role).toUpperCase();
+    const isAdmin = role === 'ADMIN';
+    const { farmId } = req.params;
 
-//     try {
-//       // 1. Kiểm tra farm có thuộc quyền xem hay không
-//       let farmSql = 'SELECT * FROM Farms WHERE farm_id = ?';
-//       const farmParams = [farmId];
+    try {
+      // 1. Kiểm tra farm có thuộc quyền xem hay không
+      let farmSql = 'SELECT * FROM Farms WHERE farm_id = ?';
+      const farmParams = [farmId];
 
-//       if (!isAdmin) {
-//         farmSql += ' AND manager_id = ?';
-//         farmParams.push(ownerId);
-//       }
+      if (!isAdmin) {
+        farmSql += ' AND manager_id = ?';
+        farmParams.push(ownerId);
+      }
 
-//       const [farmRows] = await pool.query(farmSql, farmParams);
+      const [farmRows] = await pool.query(farmSql, farmParams);
 
-//       if (!farmRows.length) {
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Không tìm thấy trại hoặc bạn không có quyền truy cập.',
-//         });
-//       }
+      if (!farmRows.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy trại hoặc bạn không có quyền truy cập.',
+        });
+      }
 
-//       const farm = farmRows[0];
+      const farm = farmRows[0];
 
-//       // 2. Tổng số tổ ong trong trại
-//       const [totalHiveRows] = await pool.query(
-//         `
-//         SELECT COUNT(*) AS total_hives
-//         FROM Hives
-//         WHERE farm_id = ?
-//         `,
-//         [farmId]
-//       );
+      // 2. Tổng số tổ ong trong trại
+      const [totalHiveRows] = await pool.query(
+        `
+        SELECT COUNT(*) AS total_hives
+        FROM Hives
+        WHERE farm_id = ?
+        `,
+        [farmId]
+      );
 
-//       const totalHives = totalHiveRows[0]?.total_hives || 0;
+      const totalHives = totalHiveRows[0]?.total_hives || 0;
 
-//       // 3. Tổng lượng mật trong trại (từ bảng honeys)
-//       const [totalHoneyRows] = await pool.query(
-//         `
-//         SELECT COALESCE(SUM(ho.amount), 0) AS total_honey_kg
-//         FROM Hives h
-//         JOIN honeys ho ON ho.hive_id = h.hive_id
-//         WHERE h.farm_id = ?
-//         `,
-//         [farmId]
-//       );
+      // 3. Tổng lượng mật trong trại (từ bảng honeys)
+      const [totalHoneyRows] = await pool.query(
+        `
+        SELECT COALESCE(SUM(ho.amount), 0) AS total_honey_kg
+        FROM Hives h
+        JOIN honeys ho ON ho.hive_id = h.hive_id
+        WHERE h.farm_id = ?
+        `,
+        [farmId]
+      );
 
-//       const totalHoneyKg = totalHoneyRows[0]?.total_honey_kg || 0;
+      const totalHoneyKg = totalHoneyRows[0]?.total_honey_kg || 0;
 
-//       // 4. Lượng mật theo ngày (30 ngày gần nhất)
-//       const [honeyByDay] = await pool.query(
-//         `
-//         SELECT 
-//           DATE(ho.date) AS day,
-//           ROUND(SUM(ho.amount), 2) AS total_honey_kg
-//         FROM Hives h
-//         JOIN honeys ho ON ho.hive_id = h.hive_id
-//         WHERE h.farm_id = ?
-//           AND ho.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-//         GROUP BY DATE(ho.date)
-//         ORDER BY day
-//         `,
-//         [farmId]
-//       );
+      // 4. Lượng mật theo ngày (30 ngày gần nhất)
+      const [honeyByDay] = await pool.query(
+        `
+        SELECT 
+          DATE(ho.date) AS day,
+          ROUND(SUM(ho.amount), 2) AS total_honey_kg
+        FROM Hives h
+        JOIN honeys ho ON ho.hive_id = h.hive_id
+        WHERE h.farm_id = ?
+          AND ho.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        GROUP BY DATE(ho.date)
+        ORDER BY day
+        `,
+        [farmId]
+      );
 
-//       // 5. Số tổ theo trạng thái (status)
-//       const [statusRows] = await pool.query(
-//         `
-//         SELECT h.status AS tinh_trang, COUNT(*) AS so_luong
-//         FROM Hives h
-//         WHERE h.farm_id = ?
-//         GROUP BY h.status
-//         `,
-//         [farmId]
-//       );
+      // 5. Số tổ theo trạng thái (status)
+      const [statusRows] = await pool.query(
+        `
+        SELECT h.status AS tinh_trang, COUNT(*) AS so_luong
+        FROM Hives h
+        WHERE h.farm_id = ?
+        GROUP BY h.status
+        `,
+        [farmId]
+      );
 
-//       // 6. Thống kê từng tổ: tổng mật + ngày thu gần nhất
-//       const [hiveStatsRows] = await pool.query(
-//         `
-//         SELECT 
-//           h.hive_id,
-//           h.hive_name,
-//           h.status,
-//           COALESCE(SUM(ho.amount), 0) AS total_honey_kg,
-//           MAX(ho.date) AS last_harvest_date
-//         FROM Hives h
-//         LEFT JOIN honeys ho ON ho.hive_id = h.hive_id
-//         WHERE h.farm_id = ?
-//         GROUP BY h.hive_id, h.hive_name, h.status
-//         ORDER BY h.hive_id
-//         `,
-//         [farmId]
-//       );
+      // 6. Thống kê từng tổ: tổng mật + ngày thu gần nhất
+      const [hiveStatsRows] = await pool.query(
+        `
+        SELECT 
+          h.hive_id,
+          h.hive_name,
+          h.status,
+          COALESCE(SUM(ho.amount), 0) AS total_honey_kg,
+          MAX(ho.date) AS last_harvest_date
+        FROM Hives h
+        LEFT JOIN honeys ho ON ho.hive_id = h.hive_id
+        WHERE h.farm_id = ?
+        GROUP BY h.hive_id, h.hive_name, h.status
+        ORDER BY h.hive_id
+        `,
+        [farmId]
+      );
 
-//       return res.json({
-//         success: true,
-//         data: {
-//           farm,
-//           summary: {
-//             total_hives: totalHives,
-//             total_honey_kg: totalHoneyKg,
-//           },
-//           honeyByDay,
-//           by_status: statusRows,
-//           hives: hiveStatsRows,
-//         },
-//       });
-//     } catch (error) {
-//       console.error('Error in /stats/farms/:farmId:', error);
-//       return res.status(500).json({
-//         success: false,
-//         message: 'Lỗi server khi thống kê trong trại ong.',
-//       });
-//     }
-//   }
-// );
+      return res.json({
+        success: true,
+        data: {
+          farm,
+          summary: {
+            total_hives: totalHives,
+            total_honey_kg: totalHoneyKg,
+          },
+          honeyByDay,
+          by_status: statusRows,
+          hives: hiveStatsRows,
+        },
+      });
+    } catch (error) {
+      console.error('Error in /stats/farms/:farmId:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi server khi thống kê trong trại ong.',
+      });
+    }
+  }
+);
 
 
 module.exports = router;
