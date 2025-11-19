@@ -4,10 +4,13 @@ const bcrypt = require("bcrypt");
 const auth = require("../middleware/auth");
 const authorize = require("../middleware/authorize"); // chỉ ADMIN
 
+// TẤT CẢ ROUTE BÊN DƯỚI CHỈ ADMIN ĐƯỢC DÙNG
+router.use(auth, authorize("ADMIN"));
+
 // =======================
 // List + search + paginate (ADMIN only)
 // =======================
-router.get("/", auth, authorize("ADMIN"), async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const page = Math.max(Number(req.query.page) || 1, 1);
     const pageSize = Math.min(Math.max(Number(req.query.page_size) || 20, 1), 100);
@@ -26,7 +29,10 @@ router.get("/", auth, authorize("ADMIN"), async (req, res) => {
       params.push(role);
     }
 
-    const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM Users u ${where}`, params);
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM Users u ${where}`,
+      params
+    );
 
     const [rows] = await pool.query(
       `SELECT u.user_id, u.username, u.full_name, u.email, u.phone, u.role, u.is_active,
@@ -46,16 +52,11 @@ router.get("/", auth, authorize("ADMIN"), async (req, res) => {
 });
 
 // =======================
-// Detail (ADMIN hoặc self)
+// Detail (ADMIN only)
 // =======================
-router.get("/:id", auth, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const userId = Number(req.params.id);
-
-    // KEEPER chỉ xem chính mình
-    if (req.user.role !== "ADMIN" && req.user.user_id !== userId) {
-      return res.status(403).json({ message: "Không có quyền xem user này" });
-    }
 
     const [rows] = await pool.query(
       `SELECT user_id, username, full_name, email, phone, role, is_active, created_at
@@ -79,7 +80,7 @@ router.get("/:id", auth, async (req, res) => {
 // =======================
 // Create user (ADMIN only)
 // =======================
-router.post("/", auth, authorize("ADMIN"), async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { username, password, full_name, email, phone, role } = req.body;
     if (!username || !password || !full_name || !email || !role)
@@ -101,19 +102,28 @@ router.post("/", auth, authorize("ADMIN"), async (req, res) => {
 // =======================
 // Update user (ADMIN only)
 // =======================
-router.put("/:id", auth, authorize("ADMIN"), async (req, res) => {
+router.put("/:id", async (req, res) => {
   try {
     const fields = ["username", "password", "full_name", "email", "phone", "role", "is_active"];
-    const input = Object.fromEntries(Object.entries(req.body).filter(([k]) => fields.includes(k)));
+    const input = Object.fromEntries(
+      Object.entries(req.body).filter(([k]) => fields.includes(k))
+    );
 
     if (input.password) input.password = await bcrypt.hash(input.password, 10);
 
-    const sets = [], params = [];
-    for (const [k, v] of Object.entries(input)) { sets.push(`${k} = ?`); params.push(v); }
+    const sets = [];
+    const params = [];
+    for (const [k, v] of Object.entries(input)) {
+      sets.push(`${k} = ?`);
+      params.push(v);
+    }
     if (!sets.length) return res.json({ success: true });
     params.push(req.params.id);
 
-    const [r] = await pool.query(`UPDATE Users SET ${sets.join(", ")} WHERE user_id = ?`, params);
+    const [r] = await pool.query(
+      `UPDATE Users SET ${sets.join(", ")} WHERE user_id = ?`,
+      params
+    );
     if (!r.affectedRows) return res.status(404).json({ message: "Not found" });
     res.json({ success: true });
   } catch (e) {
@@ -123,12 +133,46 @@ router.put("/:id", auth, authorize("ADMIN"), async (req, res) => {
 });
 
 // =======================
+// Update role user (ADMIN only)
+// =======================
+router.patch("/:id/role", async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!role) {
+      return res.status(400).json({ message: "Missing role" });
+    }
+
+    const allowedRoles = ["ADMIN", "KEEPER"];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({ message: "Invalid role" });
+    }
+
+    const [r] = await pool.query(
+      "UPDATE Users SET role = ? WHERE user_id = ?",
+      [role, req.params.id]
+    );
+
+    if (!r.affectedRows) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error("PATCH /users/:id/role", e);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// =======================
 // Lock / Unlock user (ADMIN only)
 // =======================
-router.patch("/:id/status", auth, authorize("ADMIN"), async (req, res) => {
+router.patch("/:id/status", async (req, res) => {
   try {
     const isActive = Number(Boolean(req.body.is_active));
-    const [r] = await pool.query(`UPDATE Users SET is_active = ? WHERE user_id = ?`, [isActive, req.params.id]);
+    const [r] = await pool.query(
+      `UPDATE Users SET is_active = ? WHERE user_id = ?`,
+      [isActive, req.params.id]
+    );
     if (!r.affectedRows) return res.status(404).json({ message: "Not found" });
     res.json({ success: true });
   } catch (e) {
@@ -140,9 +184,12 @@ router.patch("/:id/status", auth, authorize("ADMIN"), async (req, res) => {
 // =======================
 // Delete user (ADMIN only)
 // =======================
-router.delete("/:id", auth, authorize("ADMIN"), async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
-    const [r] = await pool.query(`DELETE FROM Users WHERE user_id = ?`, [req.params.id]);
+    const [r] = await pool.query(
+      `DELETE FROM Users WHERE user_id = ?`,
+      [req.params.id]
+    );
     if (!r.affectedRows) return res.status(404).json({ message: "Not found" });
     res.json({ success: true });
   } catch (e) {
