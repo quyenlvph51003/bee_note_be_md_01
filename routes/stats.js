@@ -24,28 +24,29 @@ router.get('/beekeepers-count', auth, authorize('ADMIN'), async (_req, res) => {
   }
 });
 
-// 2) Tổng số trại, tổ, tổng sản lượng (dùng bảng honeys)
+// 2) Tổng số chủ trại, tổ, tổng sản lượng (dùng bảng honeys)
 router.get('/summary', auth, async (req, res) => {
   try {
+    // ----- 1. Tổng số CHỦ TRẠI (không phụ thuộc role đang đăng nhập) -----
+    const [[{ total_beekeepers }]] = await pool.query(
+      "SELECT COUNT(*) AS total_beekeepers FROM Users WHERE role = 'KEEPER'"
+    );
+
+    // ----- 2. Tổng số tổ ong & tổng sản lượng (có filter theo KEEPER) -----
     const params = [];
-    let farmsWhere = '';
     let hivesWhere = '';
     let honeyWhere = '';
 
-    // Nếu KEEPER: chỉ tính farm do mình quản lý
+    // Nếu KEEPER: chỉ tính các farm do mình quản lý
     if (req.user.role === 'KEEPER') {
-      farmsWhere = 'WHERE f.manager_id = ?';
       hivesWhere = 'WHERE f.manager_id = ?';
       honeyWhere = 'WHERE f.manager_id = ?';
-      // 3 subquery => 3 lần ?
-      params.push(req.user.user_id, req.user.user_id, req.user.user_id);
+      // 2 subquery => 2 lần ?
+      params.push(req.user.user_id, req.user.user_id);
     }
 
     const [r] = await pool.query(
       `SELECT
-         -- Tổng số trại
-         (SELECT COUNT(*) FROM Farms f ${farmsWhere}) AS total_farms,
-
          -- Tổng số tổ ong
          (SELECT COUNT(*)
           FROM Hives h
@@ -63,12 +64,18 @@ router.get('/summary', auth, async (req, res) => {
       params
     );
 
-    res.json(r[0]);
+    // ghép kết quả lại trả cho FE
+    res.json({
+      total_beekeepers,          // Tổng CHỦ TRẠI
+      total_hives: r[0].total_hives,
+      total_honey_kg: r[0].total_honey_kg,
+    });
   } catch (err) {
     console.error('summary:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 // 3) Biểu đồ sản lượng theo tháng (dùng honeys, đủ 12 tháng)
 router.get('/monthly-production', auth, async (req, res) => {

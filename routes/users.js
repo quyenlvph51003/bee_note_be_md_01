@@ -16,27 +16,69 @@ router.get("/", async (req, res) => {
     const pageSize = Math.min(Math.max(Number(req.query.page_size) || 20, 1), 100);
     const offset = (page - 1) * pageSize;
     const search = (req.query.search || "").trim();
-    const role = (req.query.role || "").trim();
+    const role = (req.query.role || "").trim(); // ví dụ: 'KEEPER'
 
     const params = [];
     let where = " WHERE 1=1 ";
+
+    // search theo tên / email / username
     if (search) {
-      where += ` AND (u.full_name LIKE ? OR u.email LIKE ? OR u.username LIKE ?) `;
+      where +=
+        " AND (u.full_name LIKE ? OR u.email LIKE ? OR u.username LIKE ?) ";
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
+
+    // lọc theo role (để list Chủ trại dùng ?role=KEEPER)
     if (role) {
-      where += ` AND u.role = ? `;
+      where += " AND u.role = ? ";
       params.push(role);
     }
 
+    // tổng số dòng
     const [[{ total }]] = await pool.query(
       `SELECT COUNT(*) AS total FROM Users u ${where}`,
       params
     );
 
+    // dữ liệu + thống kê
     const [rows] = await pool.query(
-      `SELECT u.user_id, u.username, u.full_name, u.email, u.phone, u.role, u.is_active,
-              (SELECT COUNT(*) FROM Farms f WHERE f.manager_id = u.user_id) AS farms_count
+      `SELECT 
+          u.user_id,
+          u.username,
+          u.full_name,
+          u.email,
+          u.phone,
+          u.role,
+          u.is_active,
+
+          -- Số trại
+          (SELECT COUNT(*)
+             FROM Farms f
+            WHERE f.manager_id = u.user_id
+          ) AS farms_count,
+
+          -- Số tổ ong trong các trại của user
+          (SELECT COUNT(*)
+             FROM Hives h
+             JOIN Farms f ON h.farm_id = f.farm_id
+            WHERE f.manager_id = u.user_id
+          ) AS hive_count,
+
+          -- Tổng nhật ký trong bảng diarys
+          (SELECT COALESCE(COUNT(*), 0)
+             FROM diarys d
+             JOIN Hives h ON d.hive_id = h.hive_id
+             JOIN Farms f ON h.farm_id = f.farm_id
+            WHERE f.manager_id = u.user_id
+          ) AS diary_count,
+
+          -- Số cảnh báo / thông báo chưa đọc
+          (SELECT COALESCE(COUNT(*), 0)
+             FROM Notifications n
+            WHERE n.user_id = u.user_id
+              AND n.is_read = 0
+          ) AS alert_count
+
        FROM Users u
        ${where}
        ORDER BY u.created_at DESC
@@ -95,7 +137,9 @@ router.post("/", async (req, res) => {
     res.status(201).json({ user_id: r.insertId });
   } catch (e) {
     console.error("POST /users", e);
-    res.status(400).json({ message: e.code || "INSERT_ERROR", detail: e.sqlMessage });
+    res
+      .status(400)
+      .json({ message: e.code || "INSERT_ERROR", detail: e.sqlMessage });
   }
 });
 
@@ -104,7 +148,15 @@ router.post("/", async (req, res) => {
 // =======================
 router.put("/:id", async (req, res) => {
   try {
-    const fields = ["username", "password", "full_name", "email", "phone", "role", "is_active"];
+    const fields = [
+      "username",
+      "password",
+      "full_name",
+      "email",
+      "phone",
+      "role",
+      "is_active",
+    ];
     const input = Object.fromEntries(
       Object.entries(req.body).filter(([k]) => fields.includes(k))
     );
@@ -128,7 +180,9 @@ router.put("/:id", async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error("PUT /users/:id", e);
-    res.status(400).json({ message: e.code || "UPDATE_ERROR", detail: e.sqlMessage });
+    res
+      .status(400)
+      .json({ message: e.code || "UPDATE_ERROR", detail: e.sqlMessage });
   }
 });
 
