@@ -24,30 +24,43 @@ router.get('/beekeepers-count', auth, authorize('ADMIN'), async (_req, res) => {
   }
 });
 
-// 2) Tổng số trại, tổ, tổng sản lượng
+// 2) Tổng số trại, tổ, tổng sản lượng (dùng bảng honeys)
 router.get('/summary', auth, async (req, res) => {
   try {
-    let whereFarm = '';
     const params = [];
+    let farmsWhere = '';
+    let hivesWhere = '';
+    let honeyWhere = '';
 
     // Nếu KEEPER: chỉ tính farm do mình quản lý
     if (req.user.role === 'KEEPER') {
-      whereFarm = 'WHERE f.manager_id = ?';
-      params.push(req.user.user_id);
+      farmsWhere = 'WHERE f.manager_id = ?';
+      hivesWhere = 'WHERE f.manager_id = ?';
+      honeyWhere = 'WHERE f.manager_id = ?';
+      // 3 subquery => 3 lần ?
+      params.push(req.user.user_id, req.user.user_id, req.user.user_id);
     }
 
     const [r] = await pool.query(
       `SELECT
-         (SELECT COUNT(*) FROM Farms f ${whereFarm}) AS total_farms,
-         (SELECT COUNT(*) FROM Hives h
-          JOIN Farms f ON h.farm_id = f.farm_id
-          ${whereFarm.replace('f.', 'f1.')}) AS total_hives,
-         (SELECT COALESCE(SUM(p.honey_amount_kg),0)
+         -- Tổng số trại
+         (SELECT COUNT(*) FROM Farms f ${farmsWhere}) AS total_farms,
+
+         -- Tổng số tổ ong
+         (SELECT COUNT(*)
           FROM Hives h
-          JOIN Production p ON p.hive_id = h.hive_id
           JOIN Farms f ON h.farm_id = f.farm_id
-          ${whereFarm.replace('f.', 'f2.')}) AS total_honey_kg`,
-      [...params, ...params, ...params] // lặp 3 lần vì 3 subquery
+          ${hivesWhere}
+         ) AS total_hives,
+
+         -- Tổng sản lượng mật (kg) từ bảng honeys
+         (SELECT COALESCE(SUM(ho.amount), 0)
+          FROM Hives h
+          JOIN honeys ho ON ho.hive_id = h.hive_id
+          JOIN Farms f ON h.farm_id = f.farm_id
+          ${honeyWhere}
+         ) AS total_honey_kg`,
+      params
     );
 
     res.json(r[0]);
@@ -57,7 +70,7 @@ router.get('/summary', auth, async (req, res) => {
   }
 });
 
-// 3) Biểu đồ sản lượng theo tháng
+// 3) Biểu đồ sản lượng theo tháng (dùng honeys, đủ 12 tháng)
 router.get('/monthly-production', auth, async (req, res) => {
   try {
     const year = Number(req.query.year) || new Date().getFullYear();
@@ -70,22 +83,35 @@ router.get('/monthly-production', auth, async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      `SELECT MONTH(p.harvest_date) AS month, ROUND(SUM(p.honey_amount_kg),2) AS total_kg
+      `SELECT 
+          MONTH(ho.date) AS month, 
+          ROUND(SUM(ho.amount), 2) AS total_kg
        FROM Hives h
-       JOIN Production p ON p.hive_id = h.hive_id
+       JOIN honeys ho ON ho.hive_id = h.hive_id
        JOIN Farms f ON h.farm_id = f.farm_id
-       WHERE YEAR(p.harvest_date) = ? ${whereHive}
-       GROUP BY MONTH(p.harvest_date)
+       WHERE YEAR(ho.date) = ? ${whereHive}
+       GROUP BY MONTH(ho.date)
        ORDER BY month`,
       params
     );
 
-    res.json({ year, data: rows });
+    // luôn trả đủ 12 tháng, tháng nào không có dữ liệu thì = 0
+    const monthData = [];
+    for (let m = 1; m <= 12; m++) {
+      const row = rows.find(r => Number(r.month) === m);
+      monthData.push({
+        month: m,
+        total_kg: row ? Number(row.total_kg) : 0,
+      });
+    }
+
+    res.json({ year, data: monthData });
   } catch (err) {
     console.error('monthly-production:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 // 4) Sức khỏe tổ ong
 router.get('/hive-health', auth, async (req, res) => {
@@ -114,7 +140,7 @@ router.get('/hive-health', auth, async (req, res) => {
   }
 });
 
-// 5) Top trại theo sản lượng (limit, year)
+// 5) Top trại theo sản lượng (dùng honeys)
 router.get('/top-farms', auth, async (req, res) => {
   try {
     const year = Number(req.query.year) || new Date().getFullYear();
@@ -128,11 +154,14 @@ router.get('/top-farms', auth, async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      `SELECT f.farm_id, f.farm_name, ROUND(SUM(p.honey_amount_kg),2) AS total_kg
+      `SELECT 
+          f.farm_id, 
+          f.farm_name, 
+          ROUND(SUM(ho.amount), 2) AS total_kg
        FROM Farms f
        JOIN Hives h ON h.farm_id = f.farm_id
-       JOIN Production p ON p.hive_id = h.hive_id
-       WHERE YEAR(p.harvest_date) = ? ${whereFarm}
+       JOIN honeys ho ON ho.hive_id = h.hive_id
+       WHERE YEAR(ho.date) = ? ${whereFarm}
        GROUP BY f.farm_id, f.farm_name
        ORDER BY total_kg DESC
        LIMIT ?`,
@@ -284,6 +313,5 @@ router.get(
     }
   }
 );
-
 
 module.exports = router;
