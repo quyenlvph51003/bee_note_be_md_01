@@ -45,6 +45,12 @@ app.use('/api/queen', queenRouter);
 app.use('/api/frame', frameRouter);
 app.use("/api/honey", honeyRoutes);
 
+
+app.use('/api/diary', diaryRouter);
+app.use('/api/disease', diseaseRouter);
+
+app.use('/api/users/profile', require('./routes/userprofile'));
+
 app.use('/api/stats', statsRouter);
 app.use('/api/farms', farmsRouter);
 app.use('/api/users', usersRouter);
