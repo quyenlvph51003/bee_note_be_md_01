@@ -189,42 +189,39 @@ router.get(
   authorize("ADMIN"),
   async (req, res) => {
     try {
-      // optional: lọc theo năm nếu muốn, vd ?year=2024
-      const year = Number(req.query.year);
-      const hasYear = !Number.isNaN(year);
+      // ------ Validate year ------
+      const year = req.query.year ? Number(req.query.year) : null;
+      const hasYear = year !== null && !Number.isNaN(year);
 
-      // optional: lọc 1 nông dân cụ thể, vd ?keeper_id=12
-      const keeperId = Number(req.query.keeper_id);
-      const hasKeeper = !Number.isNaN(keeperId);
+      // ------ Validate keeper_id ------
+      const keeperId = req.query.keeper_id ? Number(req.query.keeper_id) : null;
+      const hasKeeper = keeperId !== null && !Number.isNaN(keeperId);
 
-      // optional: lọc theo trạng thái
-      // FE gửi: status = 'all' | 'active' | 'inactive'
-      const status = (req.query.status || "all").toString().toLowerCase();
+      // ------ Validate status ------
+      const rawStatus = (req.query.status || "all").toString().toLowerCase();
+      const statusValues = ["all", "active", "inactive"];
+      const status = statusValues.includes(rawStatus) ? rawStatus : "all";
 
       const params = [];
 
-      // điều kiện năm đặt trong JOIN để vẫn giữ LEFT JOIN
+      // Điều kiện filter năm – đặt ngoài WHERE để không mất LEFT JOIN
       let yearCondition = "";
       if (hasYear) {
         yearCondition = " AND YEAR(ho.date) = ?";
-        params.push(year); // ? thứ 1
+        params.push(year);
       }
 
-      // điều kiện filter theo 1 nông dân (nếu có)
+      // Lọc theo 1 người nuôi ong
       let keeperCondition = "";
       if (hasKeeper) {
         keeperCondition = " AND u.user_id = ?";
-        params.push(keeperId); // ? thứ 2 (nếu có)
+        params.push(keeperId);
       }
 
-      // điều kiện trạng thái (hoạt động / không hoạt động)
+      // Lọc trạng thái
       let statusCondition = "";
-      if (status === "active") {
-        statusCondition = " AND u.is_active = 1";
-      } else if (status === "inactive") {
-        statusCondition = " AND u.is_active = 0";
-      }
-      // nếu status = 'all' thì không thêm điều kiện gì
+      if (status === "active") statusCondition = " AND u.is_active = 1";
+      if (status === "inactive") statusCondition = " AND u.is_active = 0";
 
       const [rows] = await pool.query(
         `
@@ -234,20 +231,16 @@ router.get(
           u.email,
           u.is_active,
 
-          -- số tổ ong (distinct vì 1 tổ có nhiều lần thu hoạch)
           COUNT(DISTINCT h.hive_id) AS hive_count,
 
-          -- tổng sản lượng (kg)
           COALESCE(SUM(ho.amount), 0) AS total_honey_kg,
 
-          -- TB/tổ (kg) = tổng / số tổ
           ROUND(
             COALESCE(SUM(ho.amount), 0) /
             NULLIF(COUNT(DISTINCT h.hive_id), 0),
             2
           ) AS avg_honey_per_hive_kg,
 
-          -- ngày thu hoạch gần nhất
           MAX(ho.date) AS last_harvest_date
 
         FROM Users u
@@ -257,20 +250,23 @@ router.get(
           ON h.farm_id = f.farm_id
         LEFT JOIN honeys ho
           ON ho.hive_id = h.hive_id
-          ${yearCondition}          -- AND YEAR(ho.date)=?
+
         WHERE
           u.role = 'KEEPER'
-          ${keeperCondition}        -- AND u.user_id = ?
-          ${statusCondition}        -- AND u.is_active = 1/0 (nếu có)
+          ${keeperCondition}
+          ${statusCondition}
+          ${yearCondition}
+
         GROUP BY
           u.user_id, u.full_name, u.email, u.is_active
+
         ORDER BY
           u.full_name ASC
         `,
         params
       );
 
-      // Tính 3 ô summary trên UI từ kết quả bảng (đã apply filter)
+      // Tính summary
       let totalFarmers = 0;
       let totalHives = 0;
       let totalHoneyKg = 0;
@@ -279,7 +275,7 @@ router.get(
         const hiveCount = Number(r.hive_count || 0);
         const totalKg = Number(r.total_honey_kg || 0);
 
-        totalFarmers += 1;
+        totalFarmers++;
         totalHives += hiveCount;
         totalHoneyKg += totalKg;
 
@@ -287,19 +283,19 @@ router.get(
           user_id: r.user_id,
           full_name: r.full_name,
           email: r.email,
-          is_active: r.is_active, // FE map sang "Hoạt Động"/"Không Hoạt Động"
-          hive_count: hiveCount, // cột "Tổ Ong"
-          total_honey_kg: totalKg, // "Tổng Sản Lượng (kg)"
-          avg_honey_per_hive_kg: Number(r.avg_honey_per_hive_kg || 0), // "TB/Tổ (kg)"
-          last_harvest_date: r.last_harvest_date, // "Thu Hoạch Gần Nhất"
+          is_active: r.is_active,
+          hive_count: hiveCount,
+          total_honey_kg: totalKg,
+          avg_honey_per_hive_kg: Number(r.avg_honey_per_hive_kg || 0),
+          last_harvest_date: r.last_harvest_date,
         };
       });
 
       res.json({
         summary: {
-          total_beekeepers: totalFarmers, // "Tổng Nông Dân"
-          total_hives: totalHives, // "Tổng Tổ Ong"
-          total_honey_kg: totalHoneyKg, // "Tổng Sản Lượng (kg)"
+          total_beekeepers: totalFarmers,
+          total_hives: totalHives,
+          total_honey_kg: totalHoneyKg,
         },
         data,
       });
@@ -309,6 +305,7 @@ router.get(
     }
   }
 );
+
 
 
 
