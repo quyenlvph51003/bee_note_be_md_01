@@ -176,20 +176,76 @@ router.get('/:id/monthly-production', auth, async (req, res) => {
 });
 
 // --------- Create farm (ADMIN only) ----------
-router.post('/', auth, authorize('ADMIN'), async (req, res) => {
+// router.post('/', auth, authorize('ADMIN'), async (req, res) => {
+//   try {
+//     const { farm_name, manager_id, lat, lng, address } = req.body;
+//     if (!farm_name || !manager_id) {
+//       return res
+//         .status(400)
+//         .json({ message: 'farm_name & manager_id required' });
+//     }
+
+//     const [r] = await pool.query(
+//       `INSERT INTO Farms (farm_name, manager_id, lat, lng, address)
+//        VALUES (?,?,?,?,?)`,
+//       [farm_name, manager_id, lat ?? null, lng ?? null, address ?? null]
+//     );
+//     res.status(201).json({ farm_id: r.insertId });
+//   } catch (e) {
+//     console.error('POST /farms', e);
+//     res
+//       .status(400)
+//       .json({ message: e.code || 'INSERT_ERROR', detail: e.sqlMessage });
+//   }
+// });
+
+// --------- Create farm (ADMIN + KEEPER) ----------
+router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
   try {
     const { farm_name, manager_id, lat, lng, address } = req.body;
-    if (!farm_name || !manager_id) {
+    const { user_id, role } = req.user;
+
+    if (!farm_name) {
+      return res.status(400).json({ message: 'farm_name is required' });
+    }
+
+    let effectiveManagerId = manager_id;
+
+    // Nếu là chủ trại (KEEPER) thì:
+    //  - Không cho chỉ định manager_id
+    //  - Ép manager_id = chính user hiện tại
+    //  - (Tùy chọn) kiểm tra giới hạn số farm free
+    if (role === 'KEEPER') {
+      effectiveManagerId = user_id;
+
+      // Ví dụ: giới hạn 1 farm miễn phí cho mỗi chủ trại (sau này gắn thanh toán)
+      const [cnt] = await pool.query(
+        'SELECT COUNT(*) AS total FROM Farms WHERE manager_id = ?',
+        [user_id]
+      );
+      const MAX_FREE_FARMS = 1; // chỉnh số này theo gói free/pro của bạn
+
+      if (cnt[0].total >= MAX_FREE_FARMS) {
+        return res.status(403).json({
+          message:
+            'Bạn đã đạt giới hạn số trại ong cho gói hiện tại. Vui lòng nâng cấp gói để tạo thêm trại.',
+        });
+      }
+    }
+
+    // Với ADMIN: nếu không truyền manager_id thì báo lỗi (giống logic cũ)
+    if (!effectiveManagerId) {
       return res
         .status(400)
-        .json({ message: 'farm_name & manager_id required' });
+        .json({ message: 'manager_id required for admin' });
     }
 
     const [r] = await pool.query(
       `INSERT INTO Farms (farm_name, manager_id, lat, lng, address)
        VALUES (?,?,?,?,?)`,
-      [farm_name, manager_id, lat ?? null, lng ?? null, address ?? null]
+      [farm_name, effectiveManagerId, lat ?? null, lng ?? null, address ?? null]
     );
+
     res.status(201).json({ farm_id: r.insertId });
   } catch (e) {
     console.error('POST /farms', e);
@@ -198,6 +254,7 @@ router.post('/', auth, authorize('ADMIN'), async (req, res) => {
       .json({ message: e.code || 'INSERT_ERROR', detail: e.sqlMessage });
   }
 });
+
 
 // --------- Update farm (ADMIN only) ----------
 router.put('/:id', auth, authorize('ADMIN'), async (req, res) => {
