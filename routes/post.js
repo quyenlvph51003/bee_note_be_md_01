@@ -512,6 +512,122 @@ router.get(
   }
 );
 
+router.get(
+  '/:id/engagements',
+  auth,
+  authorize('ADMIN', 'KEEPER'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { user } = req;
+
+      // kiểm tra tồn tại bài viết & lấy trạng thái + chủ bài
+      const [postRows] = await pool.query(
+        'SELECT post_id, user_id, status, is_deleted FROM Posts WHERE post_id = ? AND is_deleted = 0',
+        [id]
+      );
+      if (!postRows.length) {
+        return res.status(404).json({ message: 'Bài viết không tồn tại' });
+      }
+      const post = postRows[0];
+
+      // Chỉ cho xem nếu:
+      //  - bài đã APPROVED
+      //  - hoặc user là ADMIN
+      //  - hoặc user là chủ bài (owner) — tùy business, mình cho phép owner xem luôn
+      if (
+        post.status !== 'APPROVED' &&
+        user.role !== 'ADMIN' &&
+        post.user_id !== user.user_id
+      ) {
+        return res.status(403).json({ message: 'Bạn không có quyền truy cập dữ liệu này' });
+      }
+
+      // pagination cho likes
+      const likesPage = Math.max(Number(req.query.likes_page) || 1, 1);
+      const likesPageSize = Math.min(Math.max(Number(req.query.likes_page_size) || 50, 1), 500);
+      const likesOffset = (likesPage - 1) * likesPageSize;
+
+      // pagination cho comments
+      const commentsPage = Math.max(Number(req.query.comments_page) || 1, 1);
+      const commentsPageSize = Math.min(Math.max(Number(req.query.comments_page_size) || 50, 1), 500);
+      const commentsOffset = (commentsPage - 1) * commentsPageSize;
+
+      // Lấy danh sách likes kèm thông tin user
+      const [likes] = await pool.query(
+        `SELECT
+           l.like_id,
+           l.user_id,
+           u.full_name AS author_name,
+           u.username  AS author_username,
+           up.avatar   AS author_avatar,
+           l.created_at
+         FROM PostLikes l
+         JOIN Users u ON u.user_id = l.user_id
+         LEFT JOIN UserProfiles up ON up.user_id = u.user_id
+         WHERE l.post_id = ?
+         ORDER BY l.created_at DESC
+         LIMIT ? OFFSET ?`,
+        [id, likesPageSize, likesOffset]
+      );
+
+      const [likesCountRows] = await pool.query(
+        `SELECT COUNT(*) AS total FROM PostLikes WHERE post_id = ?`,
+        [id]
+      );
+      const likesTotal = likesCountRows[0]?.total || 0;
+
+      // Lấy danh sách comments kèm thông tin user
+      const [comments] = await pool.query(
+        `SELECT
+           c.comment_id,
+           c.user_id,
+           c.comment,
+           c.created_at,
+           c.updated_at,
+           u.full_name  AS author_name,
+           u.username   AS author_username,
+           up.avatar    AS author_avatar
+         FROM PostComments c
+         JOIN Users u ON u.user_id = c.user_id
+         LEFT JOIN UserProfiles up ON up.user_id = u.user_id
+         WHERE c.post_id = ? AND c.is_deleted = 0
+         ORDER BY c.created_at ASC
+         LIMIT ? OFFSET ?`,
+        [id, commentsPageSize, commentsOffset]
+      );
+
+      const [commentsCountRows] = await pool.query(
+        `SELECT COUNT(*) AS total FROM PostComments WHERE post_id = ? AND is_deleted = 0`,
+        [id]
+      );
+      const commentsTotal = commentsCountRows[0]?.total || 0;
+
+      res.json({
+        success: true,
+        data: {
+          post_id: Number(id),
+          likes: {
+            total: likesTotal,
+            page: likesPage,
+            page_size: likesPageSize,
+            items: likes,
+          },
+          comments: {
+            total: commentsTotal,
+            page: commentsPage,
+            page_size: commentsPageSize,
+            items: comments,
+          }
+        }
+      });
+    } catch (e) {
+      console.error('GET /posts/:id/engagements', e);
+      res.status(500).json({ message: 'Lỗi server' });
+    }
+  }
+);
+
 router.put(
   '/:id/approve',
   auth,
