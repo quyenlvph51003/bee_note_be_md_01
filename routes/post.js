@@ -132,9 +132,8 @@ router.get(
           whereParts.push('p.user_id = ?');
           params.push(user_id);
         } else {
-          // feed: bài đã duyệt + bài của mình (kể cả pending)
-          whereParts.push('(p.status = "APPROVED" OR p.user_id = ?)');
-          params.push(user_id);
+          // feed cộng đồng: chỉ bài đã được duyệt
+          whereParts.push('p.status = "APPROVED"');
         }
       }
 
