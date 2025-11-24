@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
-const { verifyAccessToken } = require('../utils/jwt'); // dùng để bảo vệ route
+const { verifyAccessToken } = require('../utils/jwt');
 
 // -------------------------
 //// Middleware: Kiểm tra token
@@ -22,7 +22,7 @@ const auth = (req, res, next) => {
 };
 
 // -------------------------
-//// 🟢 1. Thêm bệnh mới
+//// 1. Thêm bệnh mới
 // -------------------------
 router.post('/add', auth, async (req, res) => {
   try {
@@ -30,6 +30,7 @@ router.post('/add', auth, async (req, res) => {
     if (!name)
       return res.status(400).json({ message: 'Thiếu tên bệnh' });
 
+    // Đã thống nhất dùng Diseases (D hoa)
     const [exist] = await pool.query('SELECT disease_id FROM Diseases WHERE name = ?', [name]);
     if (exist.length > 0)
       return res.status(409).json({ message: 'Bệnh đã tồn tại' });
@@ -52,7 +53,7 @@ router.post('/add', auth, async (req, res) => {
 });
 
 // -------------------------
-//// 🟢 2. Ghi nhận bệnh ở tổ ong
+//// 2. Ghi nhận bệnh ở tổ ong
 // -------------------------
 router.post('/record', auth, async (req, res) => {
   try {
@@ -60,9 +61,9 @@ router.post('/record', auth, async (req, res) => {
     if (!hive_id || !disease_id)
       return res.status(400).json({ message: 'Thiếu hive_id hoặc disease_id' });
 
-    // Kiểm tra hive & disease tồn tại
     const [hive] = await pool.query('SELECT hive_id FROM Hives WHERE hive_id = ?', [hive_id]);
     const [disease] = await pool.query('SELECT disease_id FROM Diseases WHERE disease_id = ?', [disease_id]);
+
     if (hive.length === 0) return res.status(404).json({ message: 'Không tìm thấy tổ ong' });
     if (disease.length === 0) return res.status(404).json({ message: 'Không tìm thấy bệnh' });
 
@@ -76,12 +77,12 @@ router.post('/record', auth, async (req, res) => {
     res.status(201).json({ message: 'Ghi nhận bệnh thành công' });
   } catch (err) {
     console.error('Record disease error:', err);
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
+    res.copy.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
 
 // -------------------------
-//// 🟢 3. Thống kê tỷ lệ tổ ong mắc bệnh
+//// 3. Thống kê tỷ lệ bệnh
 // -------------------------
 router.get('/stats', auth, async (req, res) => {
   try {
@@ -122,19 +123,14 @@ router.get('/stats', auth, async (req, res) => {
 
     const [rows] = await pool.query(query, params);
 
-    // Nếu không có dữ liệu
-    if (rows.length === 0) {
-      return res.json({ message: 'Chưa có dữ liệu bệnh', stats: [] });
-    }
-
     res.json({
-      message: 'Thống kê thành công',
+      message: rows.length === 0 ? 'Chưa có dữ liệu bệnh' : 'Thống kê thành công',
       period: { start_date, end_date },
       stats: rows.map(r => ({
         disease_id: r.disease_id,
         name: r.name,
-        infected_hives: Number(r.infected_hives),
-        total_hives: Number(r.total_hives),
+        infected_hives: Number(r.infected_hives) || 0,
+        total_hives: Number(r.total_hives) || 0,
         infection_rate_percent: Number(r.infection_rate_percent) || 0,
       })),
     });

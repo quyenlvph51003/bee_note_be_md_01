@@ -18,6 +18,7 @@ const queenRouter = require('./routes/queen');
 const frameRouter = require('./routes/frame');
 const honeyRoutes = require("./routes/honey");
 
+const orderRouter = require('./routes/order');
 
 const diaryRouter = require('./routes/diary');
 const diseaseRouter = require('./routes/disease');
@@ -61,6 +62,7 @@ app.use('/api/diary', diaryRouter);
 app.use('/api/disease', diseaseRouter);
 
 app.use('/api/users/profile', require('./routes/userprofile'));
+app.use('/api/order', orderRouter);
 
 
 app.use('/api/diary', diaryRouter);
