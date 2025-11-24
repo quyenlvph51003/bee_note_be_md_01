@@ -14,7 +14,6 @@ setTimeout(() => testConnection(), 0);
 // Import routers
 const authRouter = require('./routes/auth');
 const hivesRouter = require('./routes/hives');
-
 const queenRouter = require('./routes/queen');
 const frameRouter = require('./routes/frame');
 const honeyRoutes = require("./routes/honey");
@@ -29,6 +28,8 @@ const farmsRouter = require('./routes/farms');
 const usersRouter = require('./routes/users');
 const notificationsRouter = require('./routes/notifications');
 
+// post api
+const postRouter = require('./routes/post');
 
 const app = express();
 
@@ -55,6 +56,12 @@ app.use('/api/queen', queenRouter);
 app.use('/api/frame', frameRouter);
 app.use("/api/honey", honeyRoutes);
 
+
+
+app.use('/api/diary', diaryRouter);
+app.use('/api/disease', diseaseRouter);
+
+app.use('/api/users/profile', require('./routes/userprofile'));
 app.use('/api/order', orderRouter);
 
 
@@ -65,6 +72,8 @@ app.use('/api/stats', statsRouter);
 app.use('/api/farms', farmsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/notifications', notificationsRouter);
+
+app.use('/api/posts', postRouter);  
 
 // 404 handler
 app.use((req, res, next) => {
