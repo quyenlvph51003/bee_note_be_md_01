@@ -520,8 +520,83 @@ router.get("/:id", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
   }
 });
 
+// /**
+//  * 🐝 POST /api/hives (create)
+//  */
+// router.post("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
+//   try {
+//     const {
+//       hive_name,
+//       creation_date,
+//       hive_type,
+//       status,
+//       queen_count,
+//       frame_count,
+//       qr_code,
+//       queen_status,
+//       location,
+//       notes,
+//       farm_id,
+//     } = req.body;
+
+//     const { user_id, role } = req.user;
+
+//     if (
+//       !hive_name ||
+//       !creation_date ||
+//       !hive_type ||
+//       !status ||
+//       !queen_status ||
+//       !location ||
+//       !farm_id
+//     ) {
+//       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
+//     }
+
+//     // Nếu không phải ADMIN thì chỉ được tạo hive trong farm do mình quản lý
+//     if (role !== "ADMIN") {
+//       const [farmRows] = await pool.query(
+//         "SELECT farm_id FROM Farms WHERE farm_id = ? AND manager_id = ?",
+//         [farm_id, user_id]
+//       );
+//       if (!farmRows.length) {
+//         return res
+//           .status(403)
+//           .json({ message: "Bạn không có quyền tạo tổ ong trong farm này" });
+//       }
+//     }
+
+//     const [result] = await pool.query(
+//       `
+//       INSERT INTO Hives
+//       (hive_name, creation_date, hive_type, status, queen_count, frame_count,
+//        qr_code, queen_status, location, notes, farm_id)
+//       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+//       `,
+//       [
+//         hive_name,
+//         creation_date,
+//         hive_type,
+//         status,
+//         queen_count || 1,
+//         frame_count || 0,
+//         qr_code || null,
+//         queen_status,
+//         location,
+//         notes || null,
+//         farm_id,
+//       ]
+//     );
+
+//     res.status(201).json({ success: true, hive_id: result.insertId });
+//   } catch (err) {
+//     console.error("❌ Lỗi POST /api/hives:", err);
+//     res.status(500).json({ message: "Lỗi server", error: err.message });
+//   }
+// });
+
 /**
- * 🐝 POST /api/hives (create)
+ * 🐝 POST /api/hives (create hive)
  */
 router.post("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
   try {
@@ -541,38 +616,61 @@ router.post("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
 
     const { user_id, role } = req.user;
 
-    if (
-      !hive_name ||
-      !creation_date ||
-      !hive_type ||
-      !status ||
-      !queen_status ||
-      !location ||
-      !farm_id
-    ) {
+    if (!hive_name || !creation_date || !hive_type || !status || !queen_status || !location || !farm_id) {
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
     }
 
-    // Nếu không phải ADMIN thì chỉ được tạo hive trong farm do mình quản lý
+    // ==============================
+    // 🎯 Kiểm tra quyền tạo hive
+    // ==============================
     if (role !== "ADMIN") {
-      const [farmRows] = await pool.query(
-        "SELECT farm_id FROM Farms WHERE farm_id = ? AND manager_id = ?",
+      const [farmData] = await pool.query(
+        "SELECT farm_id FROM Farms WHERE farm_id = ? AND manager_id = ? AND is_deleted = 0",
         [farm_id, user_id]
       );
-      if (!farmRows.length) {
-        return res
-          .status(403)
-          .json({ message: "Bạn không có quyền tạo tổ ong trong farm này" });
+
+      if (!farmData.length) {
+        return res.status(403).json({
+          success: false,
+          message: "Bạn không có quyền tạo tổ ong trong farm này",
+        });
       }
     }
 
+    // ==============================
+    // 🚫 Giới hạn FREE: max 20 Hives
+    // ==============================
+    const [userInfo] = await pool.query(
+      "SELECT package_type, package_expired_at FROM Users WHERE user_id = ?",
+      [user_id]
+    );
+
+    const packageType = userInfo[0].package_type;
+
+    if (packageType === "free") {
+      const [hiveCount] = await pool.query(
+        "SELECT COUNT(*) AS total FROM Hives WHERE farm_id = ? AND is_deleted = 0",
+        [farm_id]
+      );
+
+      if (hiveCount[0].total >= 20) {
+        return res.status(403).json({
+          success: false,
+          message: "Gói FREE chỉ được tạo tối đa 20 tổ ong. Hãy nâng cấp PRO để tạo thêm.",
+        });
+      }
+    }
+
+    // ===================
+    // 🐝 Insert Hive
+    // ===================
     const [result] = await pool.query(
       `
       INSERT INTO Hives
       (hive_name, creation_date, hive_type, status, queen_count, frame_count,
        qr_code, queen_status, location, notes, farm_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
+    `,
       [
         hive_name,
         creation_date,
@@ -594,6 +692,7 @@ router.post("/", auth, authorize("ADMIN", "KEEPER"), async (req, res) => {
     res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 });
+
 
 /**
  * 🐝 PUT /api/hives/:id (update)

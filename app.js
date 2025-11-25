@@ -31,6 +31,8 @@ const notificationsRouter = require('./routes/notifications');
 // post api
 const postRouter = require('./routes/post');
 
+const users1Router = require("./routes/users1");
+
 const app = express();
 
 // Tin cậy proxy (quan trọng khi deploy Railway / VPS / Nginx / Cloudflare)
@@ -74,6 +76,8 @@ app.use('/api/users', usersRouter);
 app.use('/api/notifications', notificationsRouter);
 
 app.use('/api/posts', postRouter);  
+
+app.use("/api/users1", users1Router);
 
 // 404 handler
 app.use((req, res, next) => {
