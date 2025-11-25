@@ -2,7 +2,7 @@
     "vnp_TmnCode": "GALPJ492",
     "vnp_HashSecret": "ECT1KRP545I0J2RXJW0Q5I2Q4GF24XH2",
     "vnp_Url": "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html",
-  "vnp_ReturnUrl": "http://localhost:3000/api/order/vnpay_return",
+  "vnp_ReturnUrl": "https://beenotebemd01.up.railway.app/api/order/vnpay_return",
   "vnp_Api": "https://sandbox.vnpayment.vn/merchant_webapi/api/transaction"
   }
   
