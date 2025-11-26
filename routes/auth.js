@@ -8,7 +8,8 @@ const auth = require('../middleware/auth');
 
 
 
-const { sendMail } = require('../utils/sendMail');
+const { sendMail } = require('../utils/sendMailResend');
+
 
 router.post('/forgot-password', async (req, res) => {
   try {
