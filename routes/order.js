@@ -1,22 +1,27 @@
 /**
  * VNPay Integration Full & Clean
- * Support: Package PRO & Normal Order
+ * Support: Package PRO (Monthly / Yearly) & Normal Order
  * Author: ChatGPT rebuild
  */
 
 const express = require("express");
 const router = express.Router();
 const moment = require("moment");
-const request = require("request");
 const crypto = require("crypto");
 const querystring = require("qs");
 const config = require("config");
-
 const { pool } = require("../config/db");   // mysql2/promise
 
-// Gói PRO
-const PRO_PRICE = 50000;
-const PRO_DURATION_DAYS = 30;
+// ================== PRO PACKAGES ==================
+const PRO_MONTHLY = {
+    price: 49000,
+    days: 30
+};
+
+const PRO_YEARLY = {
+    price: 499000,
+    days: 365
+};
 
 // ================== HELPER ==================
 function sortObject(obj) {
@@ -28,12 +33,23 @@ function sortObject(obj) {
     return sorted;
 }
 
-// ================== 1. TẠO URL THANH TOÁN GÓI PRO ==================
+// =====================================================
+// 1. TẠO URL THANH TOÁN GÓI PRO (Monthly / Yearly)
+// =====================================================
 router.post("/create_pro_payment_url", (req, res) => {
     process.env.TZ = "Asia/Ho_Chi_Minh";
 
-    const { userId } = req.body;
+    const { userId, packageType } = req.body;  
+    // packageType = "monthly" | "yearly"
+
     if (!userId) return res.json({ status: false, message: "Thiếu userId" });
+    if (!packageType) return res.json({ status: false, message: "Thiếu packageType" });
+
+    // Chọn gói
+    let selectedPackage;
+    if (packageType === "monthly") selectedPackage = PRO_MONTHLY;
+    else if (packageType === "yearly") selectedPackage = PRO_YEARLY;
+    else return res.json({ status: false, message: "packageType không hợp lệ" });
 
     const tmnCode = config.get("vnp_TmnCode");
     const secretKey = config.get("vnp_HashSecret");
@@ -44,8 +60,8 @@ router.post("/create_pro_payment_url", (req, res) => {
     const createDate = moment(date).format("YYYYMMDDHHmmss");
     const ipAddr = req.ip;
 
-    // orderId của PRO: SUB_userId_timestamp
-    const orderId = `SUB_${userId}_${moment().format("YYYYMMDDHHmmss")}`;
+    // orderId: SUB_userId_monthly_timestamp
+    const orderId = `SUB_${userId}_${packageType}_${moment().format("YYYYMMDDHHmmss")}`;
 
     let vnp_Params = {
         vnp_Version: "2.1.0",
@@ -54,9 +70,9 @@ router.post("/create_pro_payment_url", (req, res) => {
         vnp_Locale: "vn",
         vnp_CurrCode: "VND",
         vnp_TxnRef: orderId,
-        vnp_OrderInfo: `Thanh toán gói PRO cho user: ${userId}`,
+        vnp_OrderInfo: `Thanh toán gói PRO ${packageType} cho user: ${userId}`,
         vnp_OrderType: "billpayment",
-        vnp_Amount: PRO_PRICE * 100,
+        vnp_Amount: selectedPackage.price * 100,
         vnp_ReturnUrl: returnUrl,
         vnp_IpAddr: ipAddr,
         vnp_CreateDate: createDate
@@ -75,7 +91,9 @@ router.post("/create_pro_payment_url", (req, res) => {
     return res.json({ status: true, payment_url: vnpUrl });
 });
 
-// ================== 2. TẠO URL THANH TOÁN ĐƠN HÀNG ==================
+// =====================================================
+// 2. TẠO URL THANH TOÁN ĐƠN HÀNG (ORDER)
+// =====================================================
 router.post("/create_payment_url", (req, res) => {
     process.env.TZ = "Asia/Ho_Chi_Minh";
 
@@ -88,7 +106,6 @@ router.post("/create_payment_url", (req, res) => {
 
     const date = new Date();
     const createDate = moment(date).format("YYYYMMDDHHmmss");
-
     const ipAddr = req.ip;
 
     let vnp_Params = {
@@ -121,12 +138,13 @@ router.post("/create_payment_url", (req, res) => {
     res.json({ status: true, payment_url: vnpUrl });
 });
 
-// ================== 3. XỬ LÝ SAU KHI THANH TOÁN (VNPAY RETURN) ==================
+// =====================================================
+// 3. XỬ LÝ SAU KHI THANH TOÁN (RETURN URL)
+// =====================================================
 router.get("/vnpay_return", async (req, res) => {
     let vnp_Params = req.query;
 
     const secureHash = vnp_Params["vnp_SecureHash"];
-
     delete vnp_Params["vnp_SecureHash"];
     delete vnp_Params["vnp_SecureHashType"];
 
@@ -139,31 +157,40 @@ router.get("/vnpay_return", async (req, res) => {
         .update(Buffer.from(signData, "utf-8"))
         .digest("hex");
 
-    // Sai checksum → thất bại
     if (secureHash !== signed) {
         return res.json({ status: false, message: "Checksum failed" });
     }
 
-    // Hợp lệ
     const orderId = req.query.vnp_TxnRef;
     const responseCode = req.query.vnp_ResponseCode;
 
-    // ============= THANH TOÁN GÓI PRO =============
+    // =====================================================
+    // 3.1 XỬ LÝ THANH TOÁN GÓI PRO
+    // =====================================================
     if (orderId.startsWith("SUB_")) {
-        const userId = orderId.split("_")[1];
+
+        const parts = orderId.split("_");
+        const userId = parts[1];
+        const packageType = parts[2];  // monthly | yearly
+
+        let selectedPackage;
+
+        if (packageType === "monthly") selectedPackage = PRO_MONTHLY;
+        else if (packageType === "yearly") selectedPackage = PRO_YEARLY;
 
         if (responseCode === "00") {
+
             await pool.query(
                 `UPDATE Users 
-                 SET package_type = 'pro',
+                 SET package_type = ?,
                      package_expired_at = DATE_ADD(NOW(), INTERVAL ? DAY)
                  WHERE user_id = ?`,
-                [PRO_DURATION_DAYS, userId]
+                [`pro_${packageType}`, selectedPackage.days, userId]
             );
 
             return res.json({
                 status: true,
-                message: "Thanh toán thành công - tài khoản đã nâng cấp PRO",
+                message: `Thanh toán thành công - gói PRO ${packageType} đã kích hoạt`,
                 userId
             });
         }
@@ -175,19 +202,32 @@ router.get("/vnpay_return", async (req, res) => {
         });
     }
 
-    // ============= THANH TOÁN ĐƠN HÀNG =============
+    // =====================================================
+    // 3.2 XỬ LÝ THANH TOÁN ĐƠN HÀNG
+    // =====================================================
     if (responseCode === "00") {
         await pool.query(
             "UPDATE `order` SET state = 'banked' WHERE order_id = ?",
             [orderId]
         );
-        return res.json({ status: true, message: "Thanh toán đơn hàng thành công", orderId });
+
+        return res.json({
+            status: true,
+            message: "Thanh toán đơn hàng thành công",
+            orderId
+        });
     }
 
-    return res.json({ status: false, message: "Thanh toán đơn hàng thất bại", orderId });
+    return res.json({
+        status: false,
+        message: "Thanh toán đơn hàng thất bại",
+        orderId
+    });
 });
 
-// ================== 4. IPN (KHÔNG BẮT BUỘC) ==================
+// =====================================================
+// 4. IPN (Optional)
+// =====================================================
 router.get("/vnpay_ipn", (req, res) => {
     return res.json({ RspCode: "00", Message: "IPN ignored (demo)" });
 });
