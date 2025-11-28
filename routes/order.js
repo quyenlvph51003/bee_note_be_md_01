@@ -142,88 +142,111 @@ router.post("/create_payment_url", (req, res) => {
 // 3. XỬ LÝ SAU KHI THANH TOÁN (RETURN URL)
 // =====================================================
 router.get("/vnpay_return", async (req, res) => {
-    let vnp_Params = req.query;
+    try {
+        // Nếu không có param → tránh crash
+        if (!req.query || !req.query.vnp_TxnRef) {
+            return res.status(400).json({ 
+                status: false, 
+                message: "Thiếu vnp_TxnRef" 
+            });
+        }
 
-    const secureHash = vnp_Params["vnp_SecureHash"];
-    delete vnp_Params["vnp_SecureHash"];
-    delete vnp_Params["vnp_SecureHashType"];
+        let vnp_Params = {...req.query};
+        const secureHash = vnp_Params["vnp_SecureHash"];
 
-    vnp_Params = sortObject(vnp_Params);
+        delete vnp_Params["vnp_SecureHash"];
+        delete vnp_Params["vnp_SecureHashType"];
 
-    const secretKey = config.get("vnp_HashSecret");
-    const signData = querystring.stringify(vnp_Params, { encode: false });
+        vnp_Params = sortObject(vnp_Params);
 
-    const signed = crypto.createHmac("sha512", secretKey)
-        .update(Buffer.from(signData, "utf-8"))
-        .digest("hex");
+        const secretKey = config.get("vnp_HashSecret");
+        const signData = querystring.stringify(vnp_Params, { encode: false });
 
-    if (secureHash !== signed) {
-        return res.json({ status: false, message: "Checksum failed" });
-    }
+        const signed = crypto.createHmac("sha512", secretKey)
+            .update(Buffer.from(signData, "utf-8"))
+            .digest("hex");
 
-    const orderId = req.query.vnp_TxnRef;
-    const responseCode = req.query.vnp_ResponseCode;
+        if (secureHash !== signed) {
+            return res.json({ status: false, message: "Checksum failed" });
+        }
 
-    // =====================================================
-    // 3.1 XỬ LÝ THANH TOÁN GÓI PRO
-    // =====================================================
-    if (orderId.startsWith("SUB_")) {
+        const orderId = req.query.vnp_TxnRef;
+        const responseCode = req.query.vnp_ResponseCode;
 
-        const parts = orderId.split("_");
-        const userId = parts[1];
-        const packageType = parts[2];  // monthly | yearly
+        // Đảm bảo không crash khi xử lý orderId
+        if (!orderId) {
+            return res.json({ status: false, message: "Missing orderId" });
+        }
 
-        let selectedPackage;
+        // ========================
+        // PRO PAYMENT
+        // ========================
+        if (orderId.startsWith("SUB_")) {
 
-        if (packageType === "monthly") selectedPackage = PRO_MONTHLY;
-        else if (packageType === "yearly") selectedPackage = PRO_YEARLY;
+            const parts = orderId.split("_");
 
+            if (parts.length < 3) {
+                return res.json({ status: false, message: "Invalid PRO order format" });
+            }
+
+            const userId = parts[1];
+            const packageType = parts[2];
+
+            let selectedPackage = null;
+            if (packageType === "monthly") selectedPackage = PRO_MONTHLY;
+            if (packageType === "yearly") selectedPackage = PRO_YEARLY;
+
+            if (!selectedPackage) {
+                return res.json({ status: false, message: "Invalid package type" });
+            }
+
+            if (responseCode === "00") {
+                await pool.query(
+                    `UPDATE Users 
+                    SET package_type = ?,
+                        package_expired_at = DATE_ADD(NOW(), INTERVAL ? DAY)
+                    WHERE user_id = ?`,
+                    [`pro_${packageType}`, selectedPackage.days, userId]
+                );
+
+                return res.json({
+                    status: true,
+                    message: `Thanh toán thành công - gói PRO ${packageType} đã kích hoạt`,
+                    userId
+                });
+            }
+
+            return res.json({ status: false, message: "Thanh toán thất bại", userId });
+        }
+
+        // ========================
+        // NORMAL ORDER
+        // ========================
         if (responseCode === "00") {
-
             await pool.query(
-                `UPDATE Users 
-                 SET package_type = ?,
-                     package_expired_at = DATE_ADD(NOW(), INTERVAL ? DAY)
-                 WHERE user_id = ?`,
-                [`pro_${packageType}`, selectedPackage.days, userId]
+                "UPDATE `order` SET state = 'banked' WHERE order_id = ?",
+                [orderId]
             );
 
             return res.json({
                 status: true,
-                message: `Thanh toán thành công - gói PRO ${packageType} đã kích hoạt`,
-                userId
+                message: "Thanh toán đơn hàng thành công",
+                orderId
             });
         }
 
-        return res.json({
+        return res.json({ status: false, message: "Thanh toán đơn hàng thất bại", orderId });
+
+    } catch (err) {
+        console.error("🔥 VNPAY RETURN ERROR:", err.message);
+        return res.status(500).json({
             status: false,
-            message: "Thanh toán thất bại",
-            userId
+            message: "Server error processing VNPAY return",
+            error: err.message
         });
     }
-
-    // =====================================================
-    // 3.2 XỬ LÝ THANH TOÁN ĐƠN HÀNG
-    // =====================================================
-    if (responseCode === "00") {
-        await pool.query(
-            "UPDATE `order` SET state = 'banked' WHERE order_id = ?",
-            [orderId]
-        );
-
-        return res.json({
-            status: true,
-            message: "Thanh toán đơn hàng thành công",
-            orderId
-        });
-    }
-
-    return res.json({
-        status: false,
-        message: "Thanh toán đơn hàng thất bại",
-        orderId
-    });
 });
+
 
 // =====================================================
 // 4. IPN (Optional)
