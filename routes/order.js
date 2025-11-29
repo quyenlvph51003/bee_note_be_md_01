@@ -143,15 +143,12 @@ router.post("/create_payment_url", (req, res) => {
 // =====================================================
 router.get("/vnpay_return", async (req, res) => {
     try {
-        // Nếu không có param → tránh crash
+        // Không có dữ liệu trả về từ VNPay → Fail
         if (!req.query || !req.query.vnp_TxnRef) {
-            return res.status(400).json({ 
-                status: false, 
-                message: "Thiếu vnp_TxnRef" 
-            });
+            return res.redirect("/vnpay_fail.html?msg=Missing+vnp_TxnRef");
         }
 
-        let vnp_Params = {...req.query};
+        let vnp_Params = { ...req.query };
         const secureHash = vnp_Params["vnp_SecureHash"];
 
         delete vnp_Params["vnp_SecureHash"];
@@ -166,27 +163,26 @@ router.get("/vnpay_return", async (req, res) => {
             .update(Buffer.from(signData, "utf-8"))
             .digest("hex");
 
+        // Sai checksum → Fail
         if (secureHash !== signed) {
-            return res.json({ status: false, message: "Checksum failed" });
+            return res.redirect("/vnpay_fail.html?msg=Checksum+Failed");
         }
 
         const orderId = req.query.vnp_TxnRef;
         const responseCode = req.query.vnp_ResponseCode;
 
-        // Đảm bảo không crash khi xử lý orderId
         if (!orderId) {
-            return res.json({ status: false, message: "Missing orderId" });
+            return res.redirect("/vnpay_fail.html?msg=Missing+orderId");
         }
 
-        // ========================
-        // PRO PAYMENT
-        // ========================
+        // ============================================================
+        // GÓI PRO (SUB_)
+        // ============================================================
         if (orderId.startsWith("SUB_")) {
 
             const parts = orderId.split("_");
-
             if (parts.length < 3) {
-                return res.json({ status: false, message: "Invalid PRO order format" });
+                return res.redirect("/vnpay_fail.html?msg=Invalid+PRO+order+format");
             }
 
             const userId = parts[1];
@@ -197,55 +193,49 @@ router.get("/vnpay_return", async (req, res) => {
             if (packageType === "yearly") selectedPackage = PRO_YEARLY;
 
             if (!selectedPackage) {
-                return res.json({ status: false, message: "Invalid package type" });
+                return res.redirect("/vnpay_fail.html?msg=Invalid+package+type");
             }
 
+            // Thành công
             if (responseCode === "00") {
                 await pool.query(
                     `UPDATE Users 
-                    SET package_type = ?,
-                        package_expired_at = DATE_ADD(NOW(), INTERVAL ? DAY)
-                    WHERE user_id = ?`,
+                     SET package_type = ?,
+                         package_expired_at = DATE_ADD(NOW(), INTERVAL ? DAY)
+                     WHERE user_id = ?`,
                     [`pro_${packageType}`, selectedPackage.days, userId]
                 );
 
-                return res.json({
-                    status: true,
-                    message: `Thanh toán thành công - gói PRO ${packageType} đã kích hoạt`,
-                    userId
-                });
+                return res.redirect(
+                    `/vnpay_success.html?type=pro&package=${packageType}&user=${userId}`
+                );
             }
 
-            return res.json({ status: false, message: "Thanh toán thất bại", userId });
+            // Thất bại
+            return res.redirect("/vnpay_fail.html?msg=Thanh+toan+PRO+that+bai");
         }
 
-        // ========================
-        // NORMAL ORDER
-        // ========================
+        // ============================================================
+        // ĐƠN HÀNG THƯỜNG
+        // ============================================================
         if (responseCode === "00") {
+
             await pool.query(
                 "UPDATE `order` SET state = 'banked' WHERE order_id = ?",
                 [orderId]
             );
 
-            return res.json({
-                status: true,
-                message: "Thanh toán đơn hàng thành công",
-                orderId
-            });
+            return res.redirect(`/vnpay_success.html?orderId=${orderId}`);
         }
 
-        return res.json({ status: false, message: "Thanh toán đơn hàng thất bại", orderId });
+        return res.redirect("/vnpay_fail.html?msg=Thanh+toan+don+hang+that+bai");
 
     } catch (err) {
         console.error("🔥 VNPAY RETURN ERROR:", err.message);
-        return res.status(500).json({
-            status: false,
-            message: "Server error processing VNPAY return",
-            error: err.message
-        });
+        return res.redirect("/vnpay_fail.html?msg=Server+Error");
     }
 });
+
 
 
 // =====================================================
