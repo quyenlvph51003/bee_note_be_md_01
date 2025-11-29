@@ -18,37 +18,84 @@ function ms(str) {
 // -------------------------
 // ✅ Đăng ký tài khoản (chỉ role = KEEPER)
 // -------------------------
+// router.post('/signup', async (req, res) => {
+//   try {
+//     const { username, password, full_name, email, phone } = req.body;
+//     if (!username || !password)
+//       return res.status(400).json({ message: 'Thiếu username hoặc password' });
+
+//     // Kiểm tra trùng username hoặc email
+//     const [dup] = await pool.query(
+//       'SELECT user_id FROM Users WHERE username = ? OR email = ? LIMIT 1',
+//       [username, email]
+//     );
+//     if (dup.length > 0)
+//       return res.status(409).json({ message: 'Username hoặc email đã tồn tại' });
+
+//     const hash = await bcrypt.hash(password, 10);
+
+//     // ✅ Mặc định role là KEEPER
+//     await pool.query(
+//       `
+//       INSERT INTO Users (username, password, full_name, email, phone, role, created_at)
+//       VALUES (?, ?, ?, ?, ?, 'KEEPER', NOW())
+//       `,
+//       [username, hash, full_name || null, email || null, phone || null]
+//     );
+
+//     res.status(201).json({ message: 'Đăng ký thành công (vai trò: KEEPER)' });
+//   } catch (err) {
+//     console.error('Signup error:', err);
+//     res.status(500).json({ message: 'Lỗi server', error: err.message });
+//   }
+// });
 router.post('/signup', async (req, res) => {
   try {
     const { username, password, full_name, email, phone } = req.body;
-    if (!username || !password)
-      return res.status(400).json({ message: 'Thiếu username hoặc password' });
 
-    // Kiểm tra trùng username hoặc email
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Thiếu username hoặc password' });
+    }
+
+    // 🔎 Kiểm tra trùng username hoặc email
     const [dup] = await pool.query(
       'SELECT user_id FROM Users WHERE username = ? OR email = ? LIMIT 1',
       [username, email]
     );
-    if (dup.length > 0)
+
+    if (dup.length > 0) {
       return res.status(409).json({ message: 'Username hoặc email đã tồn tại' });
+    }
 
     const hash = await bcrypt.hash(password, 10);
 
-    // ✅ Mặc định role là KEEPER
+    // ✅ Luôn set mặc định ROLE & PACKAGE TYPE
     await pool.query(
       `
-      INSERT INTO Users (username, password, full_name, email, phone, role, created_at)
-      VALUES (?, ?, ?, ?, ?, 'KEEPER', NOW())
+      INSERT INTO Users 
+      (username, password, full_name, email, phone, role, package_type, package_expired_at, created_at)
+      VALUES (?, ?, ?, ?, ?, 'KEEPER', 'free', NULL, NOW())
       `,
-      [username, hash, full_name || null, email || null, phone || null]
+      [
+        username,
+        hash,
+        full_name || null,
+        email || null,
+        phone || null
+      ]
     );
 
-    res.status(201).json({ message: 'Đăng ký thành công (vai trò: KEEPER)' });
+    res.status(201).json({ 
+      success: true,
+      message: 'Đăng ký thành công (vai trò: KEEPER, gói FREE)' 
+    });
+
   } catch (err) {
     console.error('Signup error:', err);
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
+
 
 // -------------------------
 // ✅ Đăng nhập
