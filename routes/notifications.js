@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const { pool } = require("../config/db");
 const auth = require("../middleware/auth");
+const { sendPushToUser } = require("../utils/sendPush");
 
 
 // ======================================
@@ -200,6 +201,30 @@ router.delete("/clear/read", auth, async (req, res) => {
     console.error("NOTI DELETE ALL READ ERROR:", err);
     res.status(500).json({ success: false });
   }
+});
+
+// ===========================
+// TEST GỬI PUSH CHO 1 USER
+// ===========================
+router.post("/test", async (req, res) => {
+    try {
+        const { user_id, title, message } = req.body;
+
+        if (!user_id) {
+            return res.status(400).json({ success: false, message: "Missing user_id" });
+        }
+
+        await sendPushToUser(user_id, title || "Test Notification", message || "Hello from backend!");
+
+        res.json({
+            success: true,
+            message: "Push test triggered"
+        });
+
+    } catch (err) {
+        console.error("❌ TEST PUSH ERROR:", err);
+        res.status(500).json({ success: false });
+    }
 });
 
 module.exports = router;

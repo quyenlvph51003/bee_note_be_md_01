@@ -33,6 +33,8 @@ const postRouter = require('./routes/post');
 
 const users1Router = require("./routes/users1");
 
+const iotRouter = require('./routes/iot');
+
 const app = express();
 
 // Tin cậy proxy (quan trọng khi deploy Railway / VPS / Nginx / Cloudflare)
@@ -78,6 +80,8 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/posts', postRouter);  
 
 app.use("/api/users1", users1Router);
+
+app.use('/api/iot', iotRouter);
 
 // 404 handler
 app.use((req, res, next) => {
