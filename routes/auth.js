@@ -5,6 +5,60 @@ const { pool } = require('../config/db');
 const { createAccessToken, createRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 const auth = require('../middleware/auth');
 
+
+
+
+const { sendMail } = require('../utils/sendMailResend');
+
+
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Thiếu email' });
+
+    const [rows] = await pool.query('SELECT user_id FROM Users WHERE email = ? LIMIT 1', [email]);
+    if (rows.length === 0) return res.status(404).json({ message: 'Email không tồn tại' });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = Date.now() + 5 * 60 * 1000;   // 5 phút
+
+    await pool.query(
+      'UPDATE Users SET reset_otp = ?, reset_expires = ? WHERE email = ?',
+      [otp, expires, email]
+    );
+
+    await sendMail(email, 'OTP Reset Password', `Mã OTP của bạn là: ${otp}`);
+
+    res.json({ message: 'Đã gửi OTP vào Gmail!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    if (!email || !newPassword)
+      return res.status(400).json({ message: 'Thiếu email hoặc mật khẩu mới' });
+
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    await pool.query(
+      `UPDATE Users 
+       SET password = ?, reset_otp = NULL, reset_expires = NULL 
+       WHERE email = ?`,
+      [hash, email]
+    );
+
+    res.json({ message: 'Đổi mật khẩu thành công!' });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server', error: err.message });
+  }
+});
+
+
+
 // -------------------------
 // 🧮 Hàm tính thời gian hết hạn (ví dụ "30d")
 // -------------------------
