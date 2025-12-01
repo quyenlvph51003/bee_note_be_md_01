@@ -256,52 +256,125 @@ router.get('/:id/monthly-production', auth, async (req, res) => {
 // });
 
 // --------- Create farm (ADMIN + KEEPER) ----------
+// router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
+//   try {
+//     const { farm_name, manager_id, lat, lng, address } = req.body;
+//     const { user_id, role } = req.user;
+
+//     if (!farm_name) {
+//       return res.status(400).json({ message: 'farm_name is required' });
+//     }
+
+//     let effectiveManagerId = manager_id;
+
+//     // Nếu là KEEPER → tự động làm manager
+//     if (role === 'KEEPER') {
+//       effectiveManagerId = user_id;
+
+//       // Giới hạn FREE: chỉ 1 farm
+//       const [cnt] = await pool.query(
+//         'SELECT COUNT(*) AS total FROM Farms WHERE manager_id = ?',
+//         [user_id]
+//       );
+
+//       if (cnt[0].total >= 1) {
+//         return res.status(403).json({
+//           message: 'Gói FREE chỉ được tạo 1 farm. Hãy nâng cấp PRO để tạo thêm.',
+//         });
+//       }
+//     }
+
+//     // Nếu ADMIN mà không gửi manager_id → auto gán = ADMIN luôn
+//     if (role === 'ADMIN' && !effectiveManagerId) {
+//       effectiveManagerId = user_id;
+//     }
+
+//     const [r] = await pool.query(
+//       `INSERT INTO Farms (farm_name, manager_id, lat, lng, address)
+//        VALUES (?,?,?,?,?)`,
+//       [farm_name, effectiveManagerId, lat ?? null, lng ?? null, address ?? null]
+//     );
+
+//     res.status(201).json({ farm_id: r.insertId });
+
+//   } catch (e) {
+//     console.error('POST /farms', e);
+//     res.status(400).json({ message: e.code || 'INSERT_ERROR', detail: e.sqlMessage });
+//   }
+// });
 router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
   try {
     const { farm_name, manager_id, lat, lng, address } = req.body;
-    const { user_id, role } = req.user;
+    const { user_id, role, package_type, package_expired_at } = req.user;
 
-    if (!farm_name) {
-      return res.status(400).json({ message: 'farm_name is required' });
+    if (!farm_name || !farm_name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'farm_name is required'
+      });
     }
 
-    let effectiveManagerId = manager_id;
+    let effectiveManagerId = manager_id || null;
 
-    // Nếu là KEEPER → tự động làm manager
+    // Check PRO + còn hạn
+    let isPro =
+      package_type &&
+      package_type.startsWith("pro") &&
+      (!package_expired_at || new Date(package_expired_at) > new Date());
+
+    // ================== KEEPER ==================
     if (role === 'KEEPER') {
       effectiveManagerId = user_id;
 
-      // Giới hạn FREE: chỉ 1 farm
       const [cnt] = await pool.query(
         'SELECT COUNT(*) AS total FROM Farms WHERE manager_id = ?',
         [user_id]
       );
 
-      if (cnt[0].total >= 1) {
+      // Nếu không phải PRO → giới hạn 1 farm
+      if (!isPro && cnt[0].total >= 1) {
         return res.status(403).json({
-          message: 'Gói FREE chỉ được tạo 1 farm. Hãy nâng cấp PRO để tạo thêm.',
+          success: false,
+          message: 'Gói FREE chỉ được tạo 1 farm. Hãy nâng cấp PRO để tạo thêm.'
         });
       }
     }
 
-    // Nếu ADMIN mà không gửi manager_id → auto gán = ADMIN luôn
+    // ================== ADMIN ==================
     if (role === 'ADMIN' && !effectiveManagerId) {
       effectiveManagerId = user_id;
     }
 
     const [r] = await pool.query(
       `INSERT INTO Farms (farm_name, manager_id, lat, lng, address)
-       VALUES (?,?,?,?,?)`,
-      [farm_name, effectiveManagerId, lat ?? null, lng ?? null, address ?? null]
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        farm_name.trim(),
+        effectiveManagerId,
+        lat ?? null,
+        lng ?? null,
+        address ?? null
+      ]
     );
 
-    res.status(201).json({ farm_id: r.insertId });
+    res.status(201).json({
+      success: true,
+      message: 'Tạo trại ong thành công',
+      farm_id: r.insertId,
+      isPro
+    });
 
   } catch (e) {
-    console.error('POST /farms', e);
-    res.status(400).json({ message: e.code || 'INSERT_ERROR', detail: e.sqlMessage });
+    console.error('POST /farms error:', e);
+
+    res.status(500).json({
+      success: false,
+      message: e.code || 'INSERT_ERROR',
+      detail: e.sqlMessage || e.message
+    });
   }
 });
+
 
 
 
