@@ -63,34 +63,67 @@
 
 // module.exports = { sendIotAlert };
 
+// const { sendPushToUser } = require("./sendPush");
+
+// const THRESHOLD = {
+//     HIGH_TEMP: 35,
+//     LOW_HUMI: 40,
+// };
+
+// async function sendIotAlert({ device_id, temp, humi, user_id }) {
+//     let title = "";
+//     let message = "";
+
+//     if (temp > THRESHOLD.HIGH_TEMP) {
+//         title = "🔥 Cảnh báo nhiệt độ cao!";
+//         message = `Thiết bị ${device_id} nóng tới ${temp}°C`;
+//     }
+
+//     if (humi < THRESHOLD.LOW_HUMI) {
+//         title = "💧 Độ ẩm quá thấp!";
+//         message = `Thiết bị ${device_id} chỉ còn ${humi}% độ ẩm`;
+//     }
+
+//     if (!title) return;
+
+//     await sendPushToUser(user_id, title, message);
+
+//     console.log("📨 IoT alert sent:", title);
+// }
+
+// module.exports = { sendIotAlert };
+
 const { sendPushToUser } = require("./sendPush");
 
 const THRESHOLD = {
-    HIGH_TEMP: 35,
+    HIGH_TEMP: 20,
     LOW_HUMI: 40,
 };
 
 async function sendIotAlert({ device_id, temp, humi, user_id }) {
-    let title = "";
-    let message = "";
+    const alerts = [];
 
     if (temp > THRESHOLD.HIGH_TEMP) {
-        title = "🔥 Cảnh báo nhiệt độ cao!";
-        message = `Thiết bị ${device_id} nóng tới ${temp}°C`;
+        alerts.push({
+            title: "🔥 Cảnh báo nhiệt độ cao!",
+            message: `Thiết bị ${device_id} nóng tới ${temp}°C`
+        });
     }
 
     if (humi < THRESHOLD.LOW_HUMI) {
-        title = "💧 Độ ẩm quá thấp!";
-        message = `Thiết bị ${device_id} chỉ còn ${humi}% độ ẩm`;
+        alerts.push({
+            title: "💧 Độ ẩm quá thấp!",
+            message: `Thiết bị ${device_id} chỉ còn ${humi}% độ ẩm`
+        });
     }
 
-    if (!title) return;
-
-    await sendPushToUser(user_id, title, message);
-
-    console.log("📨 IoT alert sent:", title);
+    for (const alert of alerts) {
+        await sendPushToUser(user_id, alert.title, alert.message);
+        console.log("📨 IoT alert sent:", alert.title);
+    }
 }
 
 module.exports = { sendIotAlert };
+
 
 

@@ -246,7 +246,7 @@ router.get("/vnpay_return", async (req, res) => {
                      bank_code = ?,
                      response_code = ?,
                      status = ?
-                 WHERE order_id = ? AND status = 'pending'`,
+                 WHERE order_id = ? AND status = 'success'`,
                 [amount, bankCode, responseCode, txStatus, orderId]
             );
         } catch (err) {
