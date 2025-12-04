@@ -254,7 +254,6 @@ router.get("/alerts", auth, async (req, res) => {
   try {
     const userId = req.user.user_id;
 
-    // ----- FIX LIMIT / OFFSET -----
     let page = Number(req.query.page);
     let limit = Number(req.query.limit);
 
@@ -263,19 +262,19 @@ router.get("/alerts", auth, async (req, res) => {
 
     const offset = (page - 1) * limit;
 
-    const [rows] = await pool.execute(
-      `SELECT id, device_id, type, title, message, status, created_at, read_at
-       FROM iot_alerts
-       WHERE user_id = ?
-       ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-      [userId, limit, offset]
-    );
+    // 🚀 FIX: KHÔNG dùng LIMIT ? OFFSET ?
+    const query = `
+      SELECT id, device_id, type, title, message, status, created_at, read_at
+      FROM iot_alerts
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    const [rows] = await pool.execute(query, [userId]);
 
     const [countRows] = await pool.execute(
-      `SELECT COUNT(*) AS total
-       FROM iot_alerts
-       WHERE user_id = ?`,
+      `SELECT COUNT(*) AS total FROM iot_alerts WHERE user_id = ?`,
       [userId]
     );
 
@@ -293,6 +292,7 @@ router.get("/alerts", auth, async (req, res) => {
     res.status(500).json({ status: false, message: "Server error" });
   }
 });
+
 
 // =====================================================
 // PATCH /api/iot/alerts/:id/read
