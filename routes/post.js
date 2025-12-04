@@ -696,5 +696,161 @@ router.put(
   }
 );
 
+// ========================
+// 9. API SỬA BÌNH LUẬN
+// ========================
+router.put("/:post_id/comments/:comment_id", auth, async (req, res) => {
+  try {
+    const { post_id, comment_id } = req.params;
+    const { comment } = req.body;
+
+    // 0. Kiểm tra dữ liệu
+    if (!comment || comment.trim() === "") {
+      return res.status(400).json({ message: "Nội dung bình luận không được để trống" });
+    }
+
+    // 1. Kiểm tra bài viết có tồn tại
+    const [post] = await pool.query(
+      "SELECT * FROM Posts WHERE post_id = ? AND is_deleted = 0",
+      [post_id]
+    );
+
+    if (post.length === 0) {
+      return res.status(404).json({ message: "Bài viết không tồn tại" });
+    }
+
+    // 2. Kiểm tra bình luận có tồn tại
+    const [cmt] = await pool.query(
+      "SELECT * FROM PostComments WHERE comment_id = ? AND post_id = ?",
+      [comment_id, post_id]
+    );
+
+    if (cmt.length === 0 || cmt[0].is_deleted === 1) {
+      return res.status(404).json({ message: "Bình luận không tồn tại" });
+    }
+
+    // 3. Kiểm tra quyền sửa bình luận
+    const isOwner = cmt[0].user_id === req.user.user_id;
+    const isAdmin = req.user.role === "ADMIN"; // Admin được quyền sửa tất cả
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: "Bạn không có quyền sửa bình luận này" });
+    }
+
+    // 4. Thực hiện UPDATE
+    await pool.query(
+      `UPDATE PostComments 
+       SET comment = ?, updated_at = NOW() 
+       WHERE comment_id = ?`,
+      [comment, comment_id]
+    );
+
+    return res.json({ message: "Đã Sửa bình luận" });
+
+  } catch (error) {
+    console.error("PUT /comments error:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+});
+
+// ========================
+// 10. API TRẢ LỜI BÌNH LUẬN
+// ========================
+router.post("/:post_id/comments/:comment_id/reply", auth, async (req, res) => {
+  try {
+    const { post_id, comment_id } = req.params;
+    const { comment } = req.body;
+
+    // 0. Kiểm tra dữ liệu
+    if (!comment || comment.trim() === "") {
+      return res.status(400).json({ message: "Nội dung trả lời không được để trống" });
+    }
+
+    // 1. Kiểm tra bài viết có tồn tại
+    const [post] = await pool.query(
+      "SELECT * FROM Posts WHERE post_id = ? AND is_deleted = 0",
+      [post_id]
+    );
+
+    if (post.length === 0) {
+      return res.status(404).json({ message: "Bài viết không tồn tại" });
+    }
+
+    // 2. Kiểm tra comment cha có tồn tại
+    const [parent] = await pool.query(
+      "SELECT * FROM PostComments WHERE comment_id = ? AND post_id = ? AND is_deleted = 0",
+      [comment_id, post_id]
+    );
+
+    if (parent.length === 0) {
+      return res.status(404).json({ message: "Bình luận gốc không tồn tại" });
+    }
+
+    // 3. Lưu trả lời (reply) vào DB — parent_id chính là comment cha
+    const [result] = await pool.query(
+      `INSERT INTO PostComments (post_id, user_id, comment, parent_id, created_at)
+       VALUES (?, ?, ?, ?, NOW())`,
+      [post_id, req.user.user_id, comment, comment_id]
+    );
+
+    return res.json({
+      message: "Trả lời bình luận thành công",
+      reply_id: result.insertId,
+    });
+
+  } catch (error) {
+    console.error("Reply comment error:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+});
+
+// ========================
+// 11. API XÓA BÌNH LUẬN
+// ========================
+router.delete("/:post_id/comments/:comment_id", auth, async (req, res) => {
+  try {
+    const { post_id, comment_id } = req.params;
+
+    // 1. Kiểm tra bài viết
+    const [post] = await pool.query(
+      "SELECT * FROM Posts WHERE post_id = ? AND is_deleted = 0",
+      [post_id]
+    );
+
+    if (post.length === 0) {
+      return res.status(404).json({ message: "Bài viết không tồn tại" });
+    }
+
+    // 2. Kiểm tra bình luận
+    const [cmt] = await pool.query(
+      "SELECT * FROM PostComments WHERE comment_id = ? AND post_id = ?",
+      [comment_id, post_id]
+    );
+
+    if (cmt.length === 0 || cmt[0].is_deleted === 1) {
+      return res.status(404).json({ message: "Bình luận không tồn tại" });
+    }
+
+    // 3. Kiểm tra quyền (chủ bình luận hoặc ADMIN)
+    if (req.user.role !== "ADMIN" && cmt[0].user_id !== req.user.user_id) {
+      return res.status(403).json({ message: "Bạn không có quyền xóa bình luận này" });
+    }
+
+    // 4. Thực hiện xóa mềm
+    await pool.query(
+      `UPDATE PostComments
+       SET is_deleted = 1, updated_at = NOW()
+       WHERE comment_id = ?`,
+      [comment_id]
+    );
+
+    return res.json({ success: true, message: "Xóa bình luận thành công" });
+
+  } catch (error) {
+    console.error("DELETE comment error:", error);
+    res.status(500).json({ message: "Lỗi server" });
+  }
+});
+
 
 module.exports = router;
