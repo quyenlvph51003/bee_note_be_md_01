@@ -208,59 +208,88 @@ router.post('/add', auth, async (req, res) => {
 // });
 
 // -------------------------
-// 2. Lấy danh sách nhật ký / reminder / alert
+// 2. Lấy danh sách nhật ký theo chủ trại đăng nhập
 // -------------------------
 router.get('/list', auth, async (req, res) => {
   try {
-    const { hive_id, type, start_date, end_date, page = 1, limit = 20 } = req.query;
+    // Lấy user_id (chủ trại) từ token
+    const userId = req.user.user_id;
 
-    let where = 'WHERE 1=1';
-    const params = [];
+    const {
+      hive_id,
+      type,
+      start_date,
+      end_date,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    // Chỉ lấy nhật ký của các tổ ong thuộc trại mà user đang quản lý
+    // Users -> Farms (manager_id) -> Hives (farm_id) -> diarys (hive_id)
+    let where = 'WHERE f.manager_id = ?'; 
+    const params = [userId];
 
     if (hive_id) {
       where += ' AND d.hive_id = ?';
       params.push(hive_id);
     }
-    if (type) {                // <-- ADD FILTER TYPE
+
+    if (type) {
       where += ' AND d.type = ?';
       params.push(type);
     }
+
     if (start_date) {
       where += ' AND d.check_date >= ?';
       params.push(start_date);
     }
+
     if (end_date) {
       where += ' AND d.check_date <= ?';
       params.push(end_date);
     }
 
-    const offset = (page - 1) * limit;
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const offset = (pageNum - 1) * limitNum;
 
+    // ==========================
+    //     MAIN SELECT QUERY
+    // ==========================
     const query = `
       SELECT 
         d.*,
         h.hive_name,
         h.location
-      FROM ${TABLE_NAME} d
-      LEFT JOIN Hives h ON d.hive_id = h.hive_id
+      FROM diarys d
+      JOIN Hives h ON d.hive_id = h.hive_id
+      JOIN Farms f ON h.farm_id = f.farm_id
       ${where}
       ORDER BY d.check_date DESC, d.created_at DESC
       LIMIT ? OFFSET ?
     `;
 
-    const countQuery = `SELECT COUNT(*) as total FROM ${TABLE_NAME} d ${where}`;
+    // ==========================
+    //         COUNT QUERY
+    // ==========================
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM diarys d
+      JOIN Hives h ON d.hive_id = h.hive_id
+      JOIN Farms f ON h.farm_id = f.farm_id
+      ${where}
+    `;
 
-    const [rows] = await pool.query(query, [...params, Number(limit), offset]);
+    const [rows] = await pool.query(query, [...params, limitNum, offset]);
     const [countResult] = await pool.query(countQuery, params);
-    const total = countResult[0].total;
 
     res.json({
-      message: 'Lấy danh sách thành công',
+      message: "Lấy danh sách nhật ký thành công",
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        total_pages: Math.ceil(total / limit)
+        page: pageNum,
+        limit: limitNum,
+        total: countResult[0].total,
+        total_pages: Math.ceil(countResult[0].total / limitNum)
       },
       data: rows.map(r => ({
         diary_id: r.diary_id,
@@ -268,7 +297,7 @@ router.get('/list', auth, async (req, res) => {
         hive_name: r.hive_name,
         location: r.location,
 
-        type: r.type,                 // <-- RETURN TYPE TO CLIENT
+        type: r.type,
         check_date: r.check_date,
         status: r.status,
         weather: r.weather,
@@ -279,11 +308,15 @@ router.get('/list', auth, async (req, res) => {
         created_at: r.created_at
       }))
     });
+
   } catch (err) {
-    console.error('Get diary list error:', err);
-    res.status(500).json({ message: 'Lỗi server', error: err.message });
+    console.error("Get diary list error:", err);
+    res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 });
+
+
+
 
 // // -------------------------
 // //// 3. Cập nhật nhật ký
