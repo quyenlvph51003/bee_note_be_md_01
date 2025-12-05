@@ -27,13 +27,66 @@ const auth = (req, res, next) => {
   }
 };
 
+// // -------------------------
+// //// 1. Thêm nhật ký chăm sóc mới
+// // -------------------------
+// router.post('/add', auth, async (req, res) => {
+//   try {
+//     const {
+//       hive_id,
+//       check_date,
+//       status = 'healthy',
+//       weather,
+//       temperature,
+//       humidity,
+//       actions,
+//       notes
+//     } = req.body;
+
+//     if (!hive_id) {
+//       return res.status(400).json({ message: 'Thiếu hive_id' });
+//     }
+
+//     // Kiểm tra tổ ong tồn tại
+//     const [hive] = await pool.query('SELECT hive_id FROM Hives WHERE hive_id = ?', [hive_id]);
+//     if (hive.length === 0) {
+//       return res.status(404).json({ message: 'Không tìm thấy tổ ong' });
+//     }
+
+//     const [result] = await pool.query(
+//       `INSERT INTO ${TABLE_NAME} 
+//          (hive_id, check_date, status, weather, temperature, humidity, actions, notes, created_at)
+//        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+//       [
+//         hive_id,
+//         check_date || new Date().toISOString().slice(0, 10),
+//         status,
+//         weather ?? null,
+//         temperature ?? null,
+//         humidity ?? null,
+//         actions ?? null,
+//         notes ?? null
+//       ]
+//     );
+
+//     res.status(201).json({
+//       message: 'Thêm nhật ký chăm sóc thành công',
+//       diary_id: result.insertId
+//     });
+//   } catch (err) {
+//     console.error('Add diary error:', err);
+//     res.status(500).json({ message: 'Lỗi server', error: err.message });
+//   }
+// });
+
 // -------------------------
-//// 1. Thêm nhật ký chăm sóc mới
+// 1. Thêm nhật ký / reminder / alert
 // -------------------------
 router.post('/add', auth, async (req, res) => {
   try {
     const {
       hive_id,
+      type,   // <-- ADD: loại dữ liệu
       check_date,
       status = 'healthy',
       weather,
@@ -54,11 +107,12 @@ router.post('/add', auth, async (req, res) => {
     }
 
     const [result] = await pool.query(
-      `INSERT INTO ${TABLE_NAME} 
-         (hive_id, check_date, status, weather, temperature, humidity, actions, notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      `INSERT INTO ${TABLE_NAME}
+        (hive_id, type, check_date, status, weather, temperature, humidity, actions, notes, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         hive_id,
+        type,
         check_date || new Date().toISOString().slice(0, 10),
         status,
         weather ?? null,
@@ -70,21 +124,95 @@ router.post('/add', auth, async (req, res) => {
     );
 
     res.status(201).json({
-      message: 'Thêm nhật ký chăm sóc thành công',
+      message: 'Thêm nhật ký thành công',
       diary_id: result.insertId
     });
+
   } catch (err) {
     console.error('Add diary error:', err);
     res.status(500).json({ message: 'Lỗi server', error: err.message });
   }
 });
 
+
+// // -------------------------
+// //// 2. Lấy danh sách nhật ký
+// // -------------------------
+// router.get('/list', auth, async (req, res) => {
+//   try {
+//     const { hive_id, start_date, end_date, page = 1, limit = 20 } = req.query;
+
+//     let where = 'WHERE 1=1';
+//     const params = [];
+
+//     if (hive_id) {
+//       where += ' AND d.hive_id = ?';
+//       params.push(hive_id);
+//     }
+//     if (start_date) {
+//       where += ' AND d.check_date >= ?';
+//       params.push(start_date);
+//     }
+//     if (end_date) {
+//       where += ' AND d.check_date <= ?';
+//       params.push(end_date);
+//     }
+
+//     const offset = (page - 1) * limit;
+
+//     const query = `
+//       SELECT 
+//         d.*,
+//         h.hive_name,
+//         h.location
+//       FROM ${TABLE_NAME} d
+//       LEFT JOIN Hives h ON d.hive_id = h.hive_id
+//       ${where}
+//       ORDER BY d.check_date DESC, d.created_at DESC
+//       LIMIT ? OFFSET ?
+//     `;
+
+//     const countQuery = `SELECT COUNT(*) as total FROM ${TABLE_NAME} d ${where}`;
+
+//     const [rows] = await pool.query(query, [...params, Number(limit), offset]);
+//     const [countResult] = await pool.query(countQuery, params);
+//     const total = countResult[0].total;
+
+//     res.json({
+//       message: 'Lấy danh sách nhật ký thành công',
+//       pagination: {
+//         page: Number(page),
+//         limit: Number(limit),
+//         total,
+//         total_pages: Math.ceil(total / limit)
+//       },
+//       data: rows.map(r => ({
+//         diary_id: r.diary_id,
+//         hive_id: r.hive_id,
+//         hive_name: r.hive_name,
+//         location: r.location,
+//         check_date: r.check_date,
+//         status: r.status,
+//         weather: r.weather,
+//         temperature: r.temperature,
+//         humidity: r.humidity,
+//         actions: r.actions,
+//         notes: r.notes,
+//         created_at: r.created_at
+//       }))
+//     });
+//   } catch (err) {
+//     console.error('Get diary list error:', err);
+//     res.status(500).json({ message: 'Lỗi server', error: err.message });
+//   }
+// });
+
 // -------------------------
-//// 2. Lấy danh sách nhật ký
+// 2. Lấy danh sách nhật ký / reminder / alert
 // -------------------------
 router.get('/list', auth, async (req, res) => {
   try {
-    const { hive_id, start_date, end_date, page = 1, limit = 20 } = req.query;
+    const { hive_id, type, start_date, end_date, page = 1, limit = 20 } = req.query;
 
     let where = 'WHERE 1=1';
     const params = [];
@@ -92,6 +220,10 @@ router.get('/list', auth, async (req, res) => {
     if (hive_id) {
       where += ' AND d.hive_id = ?';
       params.push(hive_id);
+    }
+    if (type) {                // <-- ADD FILTER TYPE
+      where += ' AND d.type = ?';
+      params.push(type);
     }
     if (start_date) {
       where += ' AND d.check_date >= ?';
@@ -123,7 +255,7 @@ router.get('/list', auth, async (req, res) => {
     const total = countResult[0].total;
 
     res.json({
-      message: 'Lấy danh sách nhật ký thành công',
+      message: 'Lấy danh sách thành công',
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -135,6 +267,8 @@ router.get('/list', auth, async (req, res) => {
         hive_id: r.hive_id,
         hive_name: r.hive_name,
         location: r.location,
+
+        type: r.type,                 // <-- RETURN TYPE TO CLIENT
         check_date: r.check_date,
         status: r.status,
         weather: r.weather,
@@ -151,8 +285,53 @@ router.get('/list', auth, async (req, res) => {
   }
 });
 
+// // -------------------------
+// //// 3. Cập nhật nhật ký
+// // -------------------------
+// router.put('/update/:id', auth, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const updates = req.body;
+
+//     const allowedFields = [
+//       'check_date', 'status', 'weather', 'temperature',
+//       'humidity', 'actions', 'notes'
+//     ];
+
+//     const setClause = [];
+//     const values = [];
+
+//     for (const field of allowedFields) {
+//       if (updates[field] !== undefined) {
+//         setClause.push(`${field} = ?`);
+//         values.push(updates[field]);
+//       }
+//     }
+
+//     if (setClause.length === 0) {
+//       return res.status(400).json({ message: 'Không có dữ liệu để cập nhật' });
+//     }
+
+//     values.push(id);
+
+//     const [result] = await pool.query(
+//       `UPDATE ${TABLE_NAME} SET ${setClause.join(', ')}, updated_at = NOW() WHERE diary_id = ?`,
+//       values
+//     );
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ message: 'Không tìm thấy nhật ký' });
+//     }
+
+//     res.json({ message: 'Cập nhật nhật ký thành công' });
+//   } catch (err) {
+//     console.error('Update diary error:', err);
+//     res.status(500).json({ message: 'Lỗi server', error: err.message });
+//   }
+// });
+
 // -------------------------
-//// 3. Cập nhật nhật ký
+// 3. Cập nhật nhật ký
 // -------------------------
 router.put('/update/:id', auth, async (req, res) => {
   try {
@@ -160,8 +339,14 @@ router.put('/update/:id', auth, async (req, res) => {
     const updates = req.body;
 
     const allowedFields = [
-      'check_date', 'status', 'weather', 'temperature',
-      'humidity', 'actions', 'notes'
+      'type',        // <-- ADD
+      'check_date', 
+      'status', 
+      'weather', 
+      'temperature',
+      'humidity', 
+      'actions', 
+      'notes'
     ];
 
     const setClause = [];
@@ -181,7 +366,9 @@ router.put('/update/:id', auth, async (req, res) => {
     values.push(id);
 
     const [result] = await pool.query(
-      `UPDATE ${TABLE_NAME} SET ${setClause.join(', ')}, updated_at = NOW() WHERE diary_id = ?`,
+      `UPDATE ${TABLE_NAME} 
+       SET ${setClause.join(', ')}, updated_at = NOW() 
+       WHERE diary_id = ?`,
       values
     );
 
