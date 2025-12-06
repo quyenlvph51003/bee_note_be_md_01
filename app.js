@@ -37,6 +37,8 @@ const iotRouter = require('./routes/iot');
 
 const paymentStats = require("./routes/paymentStats");
 
+const uploadsRouter = require('./routes/uploads');
+
 const app = express();
 
 // Tin cậy proxy (quan trọng khi deploy Railway / VPS / Nginx / Cloudflare)
@@ -49,6 +51,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Healthcheck
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -86,6 +90,7 @@ app.use("/api/users1", users1Router);
 app.use('/api/iot', iotRouter);
 
 app.use("/api/paymentStats", paymentStats);
+app.use('/api/uploads', uploadsRouter);
 
 // 404 handler
 app.use((req, res, next) => {
