@@ -39,6 +39,7 @@ router.get('/', auth, async (req, res) => {
          f.lat,
          f.lng,
          f.address,
+         f.image_url,
          f.manager_id,
          u.full_name AS manager_name,
          -- số tổ ong trong trại
@@ -302,9 +303,82 @@ router.get('/:id/monthly-production', auth, async (req, res) => {
 //     res.status(400).json({ message: e.code || 'INSERT_ERROR', detail: e.sqlMessage });
 //   }
 // });
+// router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
+//   try {
+//     const { farm_name, manager_id, lat, lng, address } = req.body;
+//     const { user_id, role, package_type, package_expired_at } = req.user;
+
+//     if (!farm_name || !farm_name.trim()) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'farm_name is required'
+//       });
+//     }
+
+//     let effectiveManagerId = manager_id || null;
+
+//     // Check PRO + còn hạn
+//     let isPro =
+//       package_type &&
+//       package_type.startsWith("pro") &&
+//       (!package_expired_at || new Date(package_expired_at) > new Date());
+
+//     // ================== KEEPER ==================
+//     if (role === 'KEEPER') {
+//       effectiveManagerId = user_id;
+
+//       const [cnt] = await pool.query(
+//         'SELECT COUNT(*) AS total FROM Farms WHERE manager_id = ?',
+//         [user_id]
+//       );
+
+//       // Nếu không phải PRO → giới hạn 1 farm
+//       if (!isPro && cnt[0].total >= 1) {
+//         return res.status(403).json({
+//           success: false,
+//           message: 'Gói FREE chỉ được tạo 1 farm. Hãy nâng cấp PRO để tạo thêm.'
+//         });
+//       }
+//     }
+
+//     // ================== ADMIN ==================
+//     if (role === 'ADMIN' && !effectiveManagerId) {
+//       effectiveManagerId = user_id;
+//     }
+
+//     const [r] = await pool.query(
+//       `INSERT INTO Farms (farm_name, manager_id, lat, lng, address)
+//        VALUES (?, ?, ?, ?, ?)`,
+//       [
+//         farm_name.trim(),
+//         effectiveManagerId,
+//         lat ?? null,
+//         lng ?? null,
+//         address ?? null
+//       ]
+//     );
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Tạo trại ong thành công',
+//       farm_id: r.insertId,
+//       isPro
+//     });
+
+//   } catch (e) {
+//     console.error('POST /farms error:', e);
+
+//     res.status(500).json({
+//       success: false,
+//       message: e.code || 'INSERT_ERROR',
+//       detail: e.sqlMessage || e.message
+//     });
+//   }
+// });
+
 router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
   try {
-    const { farm_name, manager_id, lat, lng, address } = req.body;
+    const { farm_name, manager_id, lat, lng, address, image_url } = req.body;
     const { user_id, role, package_type, package_expired_at } = req.user;
 
     if (!farm_name || !farm_name.trim()) {
@@ -331,7 +405,7 @@ router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
         [user_id]
       );
 
-      // Nếu không phải PRO → giới hạn 1 farm
+      // FREE chỉ tạo 1 farm
       if (!isPro && cnt[0].total >= 1) {
         return res.status(403).json({
           success: false,
@@ -346,14 +420,15 @@ router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
     }
 
     const [r] = await pool.query(
-      `INSERT INTO Farms (farm_name, manager_id, lat, lng, address)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO Farms (farm_name, manager_id, lat, lng, address, image_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
         farm_name.trim(),
         effectiveManagerId,
         lat ?? null,
         lng ?? null,
-        address ?? null
+        address ?? null,
+        image_url ?? null
       ]
     );
 
@@ -378,38 +453,86 @@ router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
 
 
 
+// // --------- Update farm (ADMIN only) ----------
+// router.put('/:id', auth, authorize('ADMIN'), async (req, res) => {
+//   try {
+//     const fields = ['farm_name', 'manager_id', 'lat', 'lng', 'address'];
+//     const data = Object.fromEntries(
+//       Object.entries(req.body).filter(([k]) => fields.includes(k))
+//     );
+
+//     const sets = [];
+//     const params = [];
+//     for (const [k, v] of Object.entries(data)) {
+//       sets.push(`${k} = ?`);
+//       params.push(v);
+//     }
+//     if (!sets.length) return res.json({ success: true });
+//     params.push(req.params.id);
+
+//     const [r] = await pool.query(
+//       `UPDATE Farms SET ${sets.join(', ')} WHERE farm_id = ?`,
+//       params
+//     );
+//     if (!r.affectedRows) {
+//       return res.status(404).json({ message: 'Not found' });
+//     }
+//     res.json({ success: true });
+//   } catch (e) {
+//     console.error('PUT /farms/:id', e);
+//     res
+//       .status(400)
+//       .json({ message: e.code || 'UPDATE_ERROR', detail: e.sqlMessage });
+//   }
+// });
+
 // --------- Update farm (ADMIN only) ----------
 router.put('/:id', auth, authorize('ADMIN'), async (req, res) => {
   try {
-    const fields = ['farm_name', 'manager_id', 'lat', 'lng', 'address'];
+    // Thêm image_url vào danh sách field được phép cập nhật
+    const fields = ['farm_name', 'manager_id', 'lat', 'lng', 'address', 'image_url'];
+
+    // Lọc dữ liệu hợp lệ từ body
     const data = Object.fromEntries(
       Object.entries(req.body).filter(([k]) => fields.includes(k))
     );
 
     const sets = [];
     const params = [];
+
     for (const [k, v] of Object.entries(data)) {
       sets.push(`${k} = ?`);
       params.push(v);
     }
-    if (!sets.length) return res.json({ success: true });
+
+    if (!sets.length) {
+      return res.json({ success: true, message: "Không có dữ liệu nào để update" });
+    }
+
     params.push(req.params.id);
 
     const [r] = await pool.query(
       `UPDATE Farms SET ${sets.join(', ')} WHERE farm_id = ?`,
       params
     );
+
     if (!r.affectedRows) {
-      return res.status(404).json({ message: 'Not found' });
+      return res.status(404).json({ message: 'Farm không tồn tại' });
     }
-    res.json({ success: true });
+
+    res.json({ success: true, message: "Cập nhật thành công" });
+
   } catch (e) {
     console.error('PUT /farms/:id', e);
-    res
-      .status(400)
-      .json({ message: e.code || 'UPDATE_ERROR', detail: e.sqlMessage });
+
+    res.status(400).json({
+      success: false,
+      message: e.code || 'UPDATE_ERROR',
+      detail: e.sqlMessage || e.message
+    });
   }
 });
+
 
 // --------- Delete farm (ADMIN only) ----------
 router.delete('/:id', auth, authorize('ADMIN'), async (req, res) => {
