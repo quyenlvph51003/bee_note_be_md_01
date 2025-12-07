@@ -114,12 +114,21 @@ router.get('/:id/hives', auth, async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      `SELECT hive_id, hive_name, status
-       FROM Hives
-       WHERE farm_id = ?
-       ORDER BY hive_id DESC`,
-      [req.params.id]
-    );
+  `SELECT hive_id, hive_name, status, queen_count, frame_count, queen_status, 
+          location, notes, creation_date, created_at, updated_at, image_url
+   FROM Hives
+   WHERE farm_id = ? AND is_deleted = 0
+   ORDER BY hive_id DESC`,
+  [req.params.id]
+);
+
+    // const [rows] = await pool.query(
+    //   `SELECT hive_id, hive_name, status
+    //    FROM Hives
+    //    WHERE farm_id = ?
+    //    ORDER BY hive_id DESC`,
+    //   [req.params.id]
+    // );
 
     res.json(rows);
   } catch (e) {
