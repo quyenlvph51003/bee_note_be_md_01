@@ -89,4 +89,56 @@ router.get("/summary", async (req, res) => {
   }
 });
 
+// =====================================================
+// 3. CHI TIẾT 1 GIAO DỊCH
+// GET /api/paymentStats/transaction/:id
+// =====================================================
+router.get("/transaction/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await pool.query(
+      `
+      SELECT 
+        t.id,
+        t.user_id,
+        u.username,
+        u.email,
+        t.order_id,
+        t.amount,
+        t.type,
+        t.bank_code,
+        t.response_code,
+        t.status,
+        t.created_at
+      FROM vnpay_transactions t
+      LEFT JOIN Users u ON t.user_id = u.user_id
+      WHERE t.id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "Không tìm thấy giao dịch"
+      });
+    }
+
+    res.json({
+      status: true,
+      data: rows[0]
+    });
+
+  } catch (err) {
+    console.error("TRANSACTION DETAIL ERROR:", err.message);
+    res.status(500).json({
+      status: false,
+      message: "Lỗi khi lấy chi tiết giao dịch"
+    });
+  }
+});
+
+
 module.exports = router;
