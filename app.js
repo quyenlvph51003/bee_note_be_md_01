@@ -40,6 +40,9 @@ const paymentStats = require("./routes/paymentStats");
 // ⚠️ Route cảnh báo từ Python AI
 const alertsRouter = require('./routes/alerts');
 
+const uploadsRouter = require('./routes/uploads');
+
+
 const app = express();
 
 // Tin cậy proxy (quan trọng khi deploy Railway / VPS / Nginx / Cloudflare)
@@ -52,6 +55,8 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ limit: "5mb", extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Healthcheck
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -89,6 +94,7 @@ app.use("/api/users1", users1Router);
 app.use('/api/iot', iotRouter);
 
 app.use("/api/paymentStats", paymentStats);
+app.use('/api/uploads', uploadsRouter);
 
 // webcam
 app.use('/api/alerts', alertsRouter);

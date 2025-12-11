@@ -344,25 +344,43 @@ router.get(
       const pageSize = Math.min(Math.max(Number(req.query.page_size) || 50, 1), 100);
       const offset = (page - 1) * pageSize;
 
-      const [rows] = await pool.query(
-        `SELECT
-           c.comment_id,
-           c.comment,
-           c.created_at,
-           c.updated_at,
-           u.user_id,
-           u.full_name  AS author_name,
-           u.username   AS author_username,
-           up.avatar    AS author_avatar
-         FROM PostComments c
-         JOIN Users u ON u.user_id = c.user_id
-         LEFT JOIN UserProfiles up ON up.user_id = u.user_id
-         WHERE c.post_id = ? AND c.is_deleted = 0
-         ORDER BY c.created_at ASC
-         LIMIT ? OFFSET ?`,
-        [id, pageSize, offset]
-      );
-
+      // const [rows] = await pool.query(
+      //   `SELECT
+      //      c.comment_id,
+      //      c.comment,
+      //      c.created_at,
+      //      c.updated_at,
+      //      u.user_id,
+      //      u.full_name  AS author_name,
+      //      u.username   AS author_username,
+      //      up.avatar    AS author_avatar
+      //    FROM PostComments c
+      //    JOIN Users u ON u.user_id = c.user_id
+      //    LEFT JOIN UserProfiles up ON up.user_id = u.user_id
+      //    WHERE c.post_id = ? AND c.is_deleted = 0
+      //    ORDER BY c.created_at ASC
+      //    LIMIT ? OFFSET ?`,
+      //   [id, pageSize, offset]
+      // );
+const [rows] = await pool.query(
+  `SELECT
+     c.comment_id,
+     c.comment,
+     c.parent_id,
+     c.created_at,
+     c.updated_at,
+     u.user_id,
+     u.full_name  AS author_name,
+     u.username   AS author_username,
+     up.avatar    AS author_avatar
+   FROM PostComments c
+   JOIN Users u ON u.user_id = c.user_id
+   LEFT JOIN UserProfiles up ON up.user_id = u.user_id
+   WHERE c.post_id = ? AND c.is_deleted = 0
+   ORDER BY c.created_at ASC
+   LIMIT ? OFFSET ?`,
+  [id, pageSize, offset]
+);
       res.json({ success: true, data: rows });
     } catch (e) {
       console.error('GET /posts/:id/comments', e);
@@ -578,24 +596,45 @@ router.get(
       const likesTotal = likesCountRows[0]?.total || 0;
 
       // Lấy danh sách comments kèm thông tin user
-      const [comments] = await pool.query(
-        `SELECT
-           c.comment_id,
-           c.user_id,
-           c.comment,
-           c.created_at,
-           c.updated_at,
-           u.full_name  AS author_name,
-           u.username   AS author_username,
-           up.avatar    AS author_avatar
-         FROM PostComments c
-         JOIN Users u ON u.user_id = c.user_id
-         LEFT JOIN UserProfiles up ON up.user_id = u.user_id
-         WHERE c.post_id = ? AND c.is_deleted = 0
-         ORDER BY c.created_at ASC
-         LIMIT ? OFFSET ?`,
-        [id, commentsPageSize, commentsOffset]
-      );
+      // const [comments] = await pool.query(
+      //   `SELECT
+      //      c.comment_id,
+      //      c.user_id,
+      //      c.comment,
+      //      c.created_at,
+      //      c.updated_at,
+      //      u.full_name  AS author_name,
+      //      u.username   AS author_username,
+      //      up.avatar    AS author_avatar
+      //    FROM PostComments c
+      //    JOIN Users u ON u.user_id = c.user_id
+      //    LEFT JOIN UserProfiles up ON up.user_id = u.user_id
+      //    WHERE c.post_id = ? AND c.is_deleted = 0
+      //    ORDER BY c.created_at ASC
+      //    LIMIT ? OFFSET ?`,
+      //   [id, commentsPageSize, commentsOffset]
+      // );
+
+      // Lấy danh sách comments kèm thông tin user
+const [comments] = await pool.query(
+  `SELECT
+     c.comment_id,
+     c.user_id,
+     c.comment,
+     c.parent_id,
+     c.created_at,
+     c.updated_at,
+     u.full_name  AS author_name,
+     u.username   AS author_username,
+     up.avatar    AS author_avatar
+   FROM PostComments c
+   JOIN Users u ON u.user_id = c.user_id
+   LEFT JOIN UserProfiles up ON up.user_id = u.user_id
+   WHERE c.post_id = ? AND c.is_deleted = 0
+   ORDER BY c.created_at ASC
+   LIMIT ? OFFSET ?`,
+  [id, commentsPageSize, commentsOffset]
+);
 
       const [commentsCountRows] = await pool.query(
         `SELECT COUNT(*) AS total FROM PostComments WHERE post_id = ? AND is_deleted = 0`,
