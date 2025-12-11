@@ -26,4 +26,34 @@ router.get("/me", auth, async (req, res) => {
   }
 });
 
+// ===============================
+// Lưu FCM token cho user
+// ===============================
+router.post("/update-fcm", async (req, res) => {
+    try {
+        const { user_id, fcm_token } = req.body;
+
+        if (!user_id || !fcm_token) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing user_id or fcm_token",
+            });
+        }
+
+        await pool.execute(
+            `UPDATE Users SET fcm_token = ? WHERE user_id = ?`,
+            [fcm_token, user_id]
+        );
+
+        res.json({
+            success: true,
+            message: "FCM token updated",
+        });
+
+    } catch (err) {
+        console.error("❌ update-fcm error:", err);
+        res.status(500).json({ success: false });
+    }
+});
+
 module.exports = router;

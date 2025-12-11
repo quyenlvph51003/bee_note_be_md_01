@@ -33,6 +33,13 @@ const postRouter = require('./routes/post');
 
 const users1Router = require("./routes/users1");
 
+const iotRouter = require('./routes/iot');
+
+const paymentStats = require("./routes/paymentStats");
+
+// ⚠️ Route cảnh báo từ Python AI
+const alertsRouter = require('./routes/alerts');
+
 const app = express();
 
 // Tin cậy proxy (quan trọng khi deploy Railway / VPS / Nginx / Cloudflare)
@@ -41,8 +48,8 @@ app.set('trust proxy', 1);
 // Middleware
 app.use(logger('dev'));
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ limit: "5mb", extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -78,6 +85,13 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/posts', postRouter);  
 
 app.use("/api/users1", users1Router);
+
+app.use('/api/iot', iotRouter);
+
+app.use("/api/paymentStats", paymentStats);
+
+// webcam
+app.use('/api/alerts', alertsRouter);
 
 // 404 handler
 app.use((req, res, next) => {
