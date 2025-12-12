@@ -1,4 +1,7 @@
+const express = require("express");
+const router = express.Router();
 const { sendCameraAlert } = require("../utils/sendCameraAlert");
+const { pool } = require("../config/db");
 
 router.post("/", async (req, res) => {
     try {
@@ -26,3 +29,6 @@ router.post("/", async (req, res) => {
         res.status(500).json({ message: "Lỗi server" });
     }
 });
+
+
+module.exports = router;
