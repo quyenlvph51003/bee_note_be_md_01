@@ -9,7 +9,9 @@ const { pool } = require("../config/db");
  */
 router.post("/", async (req, res) => {
     try {
-        const alertsArray = req.body.alerts;
+        const singleAlert = req.body;
+        const alertsArray = [singleAlert]; // gói alert đơn lẻ thành array
+
 
         if (!Array.isArray(alertsArray) || alertsArray.length === 0) {
             return res.status(400).json({ message: "Thiếu dữ liệu alerts" });
