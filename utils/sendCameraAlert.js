@@ -39,7 +39,7 @@
 // module.exports = { sendCameraAlert };
 
 const { sendPushToUser } = require("./sendPush");
-const pool = require("./db");
+const { pool } = require("../config/db");
 
 // ICON + MỨC NGUY HIỂM
 const ALERT_CONFIG = {
