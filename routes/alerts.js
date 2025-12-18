@@ -28,7 +28,7 @@ router.post("/", async (req, res) => {
         const alertId = result.insertId;
 
         // Gửi push notification (tuỳ hệ thống user)
-        const user_id = 1;
+        const { user_id } = req.body;
         await sendCameraAlert({ user_id, type, confidence, alertId });
 
         res.json({
