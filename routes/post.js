@@ -5,6 +5,8 @@ const router = require('express').Router();
 const { pool } = require('../config/db');
 const auth = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
+// const { upload } = require('./uploads');
+const { upload } = require('./uploads');
 
 // --------- Helper: kiểm tra quyền xem / thao tác với post ----------
 async function getPostForUser(postId, user, { allowOwnerPending = false } = {}) {
@@ -36,64 +38,138 @@ async function getPostForUser(postId, user, { allowOwnerPending = false } = {}) 
 // ===================================================================
 //  📝 1. Tạo bài viết (chủ trại hoặc admin) – luôn ở trạng thái PENDING
 // ===================================================================
+// router.post(
+//   '/',
+//   auth,
+//   authorize('ADMIN', 'KEEPER'),
+//   async (req, res) => {
+//     try {
+//       const { content, image_url, images } = req.body;
+//       const { user_id } = req.user;
+
+//       if (!content || !content.trim()) {
+//         return res.status(400).json({ message: 'Nội dung bài viết không được trống' });
+//       }
+
+//       const conn = await pool.getConnection();
+//       try {
+//         await conn.beginTransaction();
+
+//         // Bài viết chính
+//         const [r] = await conn.query(
+//           `INSERT INTO Posts (user_id, content, image_url, status, created_at, is_deleted)
+//            VALUES (?, ?, ?, 'PENDING', NOW(), 0)`,
+//           [user_id, content.trim(), image_url || null]
+//         );
+//         const postId = r.insertId;
+
+//         // Nếu client gửi nhiều ảnh (mảng URL) → lưu vào PostImages
+//         if (Array.isArray(images) && images.length > 0) {
+//           const values = images
+//             .filter((u) => !!u)
+//             .map((u) => [postId, u]);
+
+//           if (values.length) {
+//             await conn.query(
+//               `INSERT INTO PostImages (post_id, image_url) VALUES ?`,
+//               [values]
+//             );
+//           }
+//         }
+
+//         await conn.commit();
+
+//         res.status(201).json({
+//           success: true,
+//           message: 'Tạo bài viết thành công, đang chờ admin duyệt',
+//           post_id: postId,
+//         });
+//       } catch (e) {
+//         await conn.rollback();
+//         throw e;
+//       } finally {
+//         conn.release();
+//       }
+//     } catch (e) {
+//       console.error('POST /posts', e);
+//       res.status(500).json({ message: 'Lỗi server' });
+//     }
+//   }
+// );
 router.post(
   '/',
   auth,
   authorize('ADMIN', 'KEEPER'),
+  upload.fields([
+    { name: 'image', maxCount: 1 },   // ảnh chính
+    { name: 'images', maxCount: 10 }  // ảnh phụ
+  ]),
   async (req, res) => {
     try {
-      const { content, image_url, images } = req.body;
+      const { content } = req.body;
       const { user_id } = req.user;
 
       if (!content || !content.trim()) {
-        return res.status(400).json({ message: 'Nội dung bài viết không được trống' });
+        return res.status(400).json({
+          message: 'Nội dung bài viết không được trống'
+        });
       }
+
+      // Ảnh chính
+      const imageUrl = req.files?.image?.[0]
+        ? `/uploads/${req.files.image[0].filename}`
+        : null;
+
+      // Ảnh phụ
+      const images = req.files?.images
+        ? req.files.images.map(f => `/uploads/${f.filename}`)
+        : [];
 
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
 
-        // Bài viết chính
         const [r] = await conn.query(
           `INSERT INTO Posts (user_id, content, image_url, status, created_at, is_deleted)
            VALUES (?, ?, ?, 'PENDING', NOW(), 0)`,
-          [user_id, content.trim(), image_url || null]
+          [user_id, content.trim(), imageUrl]
         );
+
         const postId = r.insertId;
 
-        // Nếu client gửi nhiều ảnh (mảng URL) → lưu vào PostImages
-        if (Array.isArray(images) && images.length > 0) {
-          const values = images
-            .filter((u) => !!u)
-            .map((u) => [postId, u]);
-
-          if (values.length) {
-            await conn.query(
-              `INSERT INTO PostImages (post_id, image_url) VALUES ?`,
-              [values]
-            );
-          }
+        if (images.length) {
+          const values = images.map(url => [postId, url]);
+          await conn.query(
+            `INSERT INTO PostImages (post_id, image_url) VALUES ?`,
+            [values]
+          );
         }
 
         await conn.commit();
 
         res.status(201).json({
           success: true,
-          message: 'Tạo bài viết thành công, đang chờ admin duyệt',
+          message: 'Tạo bài viết thành công, chờ duyệt',
           post_id: postId,
+          image: imageUrl,
+          images
         });
+
       } catch (e) {
         await conn.rollback();
         throw e;
       } finally {
         conn.release();
       }
-    } catch (e) {
-      console.error('POST /posts', e);
+
+    } catch (err) {
+      console.error('POST /posts error:', err);
       res.status(500).json({ message: 'Lỗi server' });
     }
   }
 );
+
+
 
 // ===================================================================
 //  📰 2. Lấy danh sách bài viết (feed cộng đồng)
