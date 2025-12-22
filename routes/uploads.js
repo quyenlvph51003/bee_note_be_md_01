@@ -82,4 +82,8 @@ router.use((err, req, res, next) => {
   });
 });
 
-module.exports = router;
+// module.exports = router;
+module.exports = {
+  router,
+  upload
+};

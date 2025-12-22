@@ -40,7 +40,8 @@ const paymentStats = require("./routes/paymentStats");
 // ⚠️ Route cảnh báo từ Python AI
 const alertsRouter = require('./routes/alerts');
 
-const uploadsRouter = require('./routes/uploads');
+// const uploadsRouter = require('./routes/uploads');
+const uploads = require('./routes/uploads');
 
 
 const app = express();
@@ -94,7 +95,8 @@ app.use("/api/users1", users1Router);
 app.use('/api/iot', iotRouter);
 
 app.use("/api/paymentStats", paymentStats);
-app.use('/api/uploads', uploadsRouter);
+// app.use('/api/uploads', uploadsRouter);
+app.use('/api/uploads', uploads.router);
 
 // webcam
 app.use('/api/alerts', alertsRouter);
