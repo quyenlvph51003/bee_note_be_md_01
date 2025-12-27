@@ -385,79 +385,189 @@ router.get('/:id/monthly-production', auth, async (req, res) => {
 //   }
 // });
 
-router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
-  try {
-    const { farm_name, manager_id, lat, lng, address, image_url } = req.body;
-    const { user_id, role, package_type, package_expired_at } = req.user;
+// router.post('/', auth, authorize('ADMIN', 'KEEPER'), async (req, res) => {
+//   try {
+//     const { farm_name, manager_id, lat, lng, address, image_url } = req.body;
+//     const { user_id, role, package_type, package_expired_at } = req.user;
 
-    if (!farm_name || !farm_name.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'farm_name is required'
-      });
-    }
+//     if (!farm_name || !farm_name.trim()) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'farm_name is required'
+//       });
+//     }
 
-    let effectiveManagerId = manager_id || null;
+//     let effectiveManagerId = manager_id || null;
 
-    // Check PRO + còn hạn
-    let isPro =
-      package_type &&
-      package_type.startsWith("pro") &&
-      (!package_expired_at || new Date(package_expired_at) > new Date());
+//     // Check PRO + còn hạn
+//     let isPro =
+//       package_type &&
+//       package_type.startsWith("pro") &&
+//       (!package_expired_at || new Date(package_expired_at) > new Date());
 
-    // ================== KEEPER ==================
-    if (role === 'KEEPER') {
-      effectiveManagerId = user_id;
+//     // ================== KEEPER ==================
+//     if (role === 'KEEPER') {
+//       effectiveManagerId = user_id;
 
-      const [cnt] = await pool.query(
-        'SELECT COUNT(*) AS total FROM Farms WHERE manager_id = ?',
-        [user_id]
-      );
+//       const [cnt] = await pool.query(
+//         'SELECT COUNT(*) AS total FROM Farms WHERE manager_id = ?',
+//         [user_id]
+//       );
 
-      // FREE chỉ tạo 1 farm
-      if (!isPro && cnt[0].total >= 1) {
-        return res.status(403).json({
+//       // FREE chỉ tạo 1 farm
+//       if (!isPro && cnt[0].total >= 1) {
+//         return res.status(403).json({
+//           success: false,
+//           message: 'Gói FREE chỉ được tạo 1 farm. Hãy nâng cấp PRO để tạo thêm.'
+//         });
+//       }
+//     }
+
+//     // ================== ADMIN ==================
+//     if (role === 'ADMIN' && !effectiveManagerId) {
+//       effectiveManagerId = user_id;
+//     }
+
+//     const [r] = await pool.query(
+//       `INSERT INTO Farms (farm_name, manager_id, lat, lng, address, image_url)
+//        VALUES (?, ?, ?, ?, ?, ?)`,
+//       [
+//         farm_name.trim(),
+//         effectiveManagerId,
+//         lat ?? null,
+//         lng ?? null,
+//         address ?? null,
+//         image_url ?? null
+//       ]
+//     );
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Tạo trại ong thành công',
+//       farm_id: r.insertId,
+//       isPro
+//     });
+
+//   } catch (e) {
+//     console.error('POST /farms error:', e);
+
+//     res.status(500).json({
+//       success: false,
+//       message: e.code || 'INSERT_ERROR',
+//       detail: e.sqlMessage || e.message
+//     });
+//   }
+// });
+const upload = require("../middleware/upload");
+const cloudinary = require("../config/cloudinary");
+
+/**
+ * 🐝 POST /api/farms (create farm)
+ */
+router.post(
+  '/',
+  auth,
+  authorize('ADMIN', 'KEEPER'),
+  upload.single('image'), // 👈 nhận ảnh
+  async (req, res) => {
+    try {
+      const { farm_name, manager_id, lat, lng, address } = req.body;
+      const { user_id, role, package_type, package_expired_at } = req.user;
+
+      if (!farm_name || !farm_name.trim()) {
+        return res.status(400).json({
           success: false,
-          message: 'Gói FREE chỉ được tạo 1 farm. Hãy nâng cấp PRO để tạo thêm.'
+          message: 'farm_name is required'
         });
       }
+
+      let effectiveManagerId = manager_id || null;
+
+      // ================== PRO CHECK ==================
+      const isPro =
+        package_type &&
+        package_type.startsWith("pro") &&
+        (!package_expired_at || new Date(package_expired_at) > new Date());
+
+      // ================== KEEPER ==================
+      if (role === 'KEEPER') {
+        effectiveManagerId = user_id;
+
+        const [cnt] = await pool.query(
+          'SELECT COUNT(*) AS total FROM Farms WHERE manager_id = ? AND is_deleted = 0',
+          [user_id]
+        );
+
+        // FREE chỉ tạo 1 farm
+        if (!isPro && cnt[0].total >= 1) {
+          return res.status(403).json({
+            success: false,
+            message: 'Gói FREE chỉ được tạo 1 farm. Hãy nâng cấp PRO để tạo thêm.'
+          });
+        }
+      }
+
+      // ================== ADMIN ==================
+      if (role === 'ADMIN' && !effectiveManagerId) {
+        effectiveManagerId = user_id;
+      }
+
+      // ================== UPLOAD CLOUDINARY ==================
+      let image_url = null;
+
+      if (req.file) {
+        const uploadResult = await new Promise((resolve, reject) => {
+          cloudinary.uploader
+            .upload_stream(
+              {
+                folder: 'farms',
+                resource_type: 'image'
+              },
+              (err, result) => {
+                if (err) reject(err);
+                else resolve(result);
+              }
+            )
+            .end(req.file.buffer);
+        });
+
+        image_url = uploadResult.secure_url;
+      }
+
+      // ================== INSERT FARM ==================
+      const [r] = await pool.query(
+        `INSERT INTO Farms (farm_name, manager_id, lat, lng, address, image_url)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          farm_name.trim(),
+          effectiveManagerId,
+          lat ?? null,
+          lng ?? null,
+          address ?? null,
+          image_url
+        ]
+      );
+
+      res.status(201).json({
+        success: true,
+        message: 'Tạo trại ong thành công',
+        farm_id: r.insertId,
+        image_url,
+        isPro
+      });
+
+    } catch (e) {
+      console.error('❌ POST /farms error:', e);
+
+      res.status(500).json({
+        success: false,
+        message: e.code || 'INSERT_ERROR',
+        detail: e.sqlMessage || e.message
+      });
     }
-
-    // ================== ADMIN ==================
-    if (role === 'ADMIN' && !effectiveManagerId) {
-      effectiveManagerId = user_id;
-    }
-
-    const [r] = await pool.query(
-      `INSERT INTO Farms (farm_name, manager_id, lat, lng, address, image_url)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        farm_name.trim(),
-        effectiveManagerId,
-        lat ?? null,
-        lng ?? null,
-        address ?? null,
-        image_url ?? null
-      ]
-    );
-
-    res.status(201).json({
-      success: true,
-      message: 'Tạo trại ong thành công',
-      farm_id: r.insertId,
-      isPro
-    });
-
-  } catch (e) {
-    console.error('POST /farms error:', e);
-
-    res.status(500).json({
-      success: false,
-      message: e.code || 'INSERT_ERROR',
-      detail: e.sqlMessage || e.message
-    });
   }
-});
+);
+
 
 
 
