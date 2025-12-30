@@ -606,51 +606,66 @@ router.post(
 // });
 
 // --------- Update farm (ADMIN only) ----------
-router.put('/:id', auth, authorize('ADMIN'), async (req, res) => {
-  try {
-    // Thêm image_url vào danh sách field được phép cập nhật
-    const fields = ['farm_name', 'manager_id', 'lat', 'lng', 'address', 'image_url'];
+router.put(
+  '/:id',
+  auth,
+  authorize('ADMIN'),
+  upload.single('image_url'), // ⚠️ BẮT BUỘC
+  async (req, res) => {
+    try {
+      const fields = ['farm_name', 'manager_id', 'lat', 'lng', 'address'];
+      const data = Object.fromEntries(
+        Object.entries(req.body).filter(([k]) => fields.includes(k))
+      );
 
-    // Lọc dữ liệu hợp lệ từ body
-    const data = Object.fromEntries(
-      Object.entries(req.body).filter(([k]) => fields.includes(k))
-    );
+      // nếu có upload ảnh
+      if (req.file) {
+        const result = await cloudinary.uploader.upload(
+          `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
+          { folder: 'farms' }
+        );
+        data.image_url = result.secure_url;
+      }
 
-    const sets = [];
-    const params = [];
+      const sets = [];
+      const params = [];
 
-    for (const [k, v] of Object.entries(data)) {
-      sets.push(`${k} = ?`);
-      params.push(v);
+      for (const [k, v] of Object.entries(data)) {
+        sets.push(`${k} = ?`);
+        params.push(v);
+      }
+
+      if (!sets.length) {
+        return res.json({
+          success: true,
+          message: 'Không có dữ liệu nào để update'
+        });
+      }
+
+      params.push(req.params.id);
+
+      const [r] = await pool.query(
+        `UPDATE Farms SET ${sets.join(', ')} WHERE farm_id = ?`,
+        params
+      );
+
+      if (!r.affectedRows) {
+        return res.status(404).json({ message: 'Farm không tồn tại' });
+      }
+
+      res.json({ success: true, message: 'Cập nhật thành công' });
+
+    } catch (e) {
+      console.error('PUT /farms/:id', e);
+      res.status(400).json({
+        success: false,
+        message: e.code || 'UPDATE_ERROR',
+        detail: e.message
+      });
     }
-
-    if (!sets.length) {
-      return res.json({ success: true, message: "Không có dữ liệu nào để update" });
-    }
-
-    params.push(req.params.id);
-
-    const [r] = await pool.query(
-      `UPDATE Farms SET ${sets.join(', ')} WHERE farm_id = ?`,
-      params
-    );
-
-    if (!r.affectedRows) {
-      return res.status(404).json({ message: 'Farm không tồn tại' });
-    }
-
-    res.json({ success: true, message: "Cập nhật thành công" });
-
-  } catch (e) {
-    console.error('PUT /farms/:id', e);
-
-    res.status(400).json({
-      success: false,
-      message: e.code || 'UPDATE_ERROR',
-      detail: e.sqlMessage || e.message
-    });
   }
-});
+);
+
 
 
 // --------- Delete farm (ADMIN only) ----------
